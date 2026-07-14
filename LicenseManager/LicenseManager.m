@@ -1,14 +1,28 @@
 #import "LicenseManager.h"
 #import <sys/sysctl.h>
 
+
 NSString *const kLicenseServerURL = @"https://yalla-upd0.onrender.com";
 static NSString *const kStoredLicenseKey = @"com.license.storedKey";
 static NSString *const kLicenseValidKey = @"com.license.isValid";
 
+static id observerToken = nil;
+
+__attribute__((constructor))
+static void onDylibLoad() {
+    observerToken = [[NSNotificationCenter defaultCenter]
+        addObserverForName:UIApplicationDidFinishLaunchingNotification
+        object:nil queue:nil
+        usingBlock:^(NSNotification *note) {
+            [[LicenseManager sharedInstance] checkLicense];
+        }];
+}
+
 @interface LicenseManager ()
-@property (nonatomic, strong) UIWindow *activationWindow;
 @property (nonatomic, strong) NSTimer *retryTimer;
 @property (nonatomic, copy) NSString *pendingKey;
+@property (nonatomic, strong) UIWindow *activationWindow;
+@property (nonatomic, strong) UIAlertController *currentAlert;
 @end
 
 @implementation LicenseManager
@@ -25,17 +39,17 @@ static NSString *const kLicenseValidKey = @"com.license.isValid";
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _serverURL = kLicenseServerURL;
-        _bundleId = [[NSBundle mainBundle] bundleIdentifier];
     }
     return self;
 }
 
+- (BOOL)isLicenseValid {
+    return [[NSUserDefaults standardUserDefaults] boolForKey:kLicenseValidKey];
+}
+
 - (NSString *)getDeviceId {
     NSString *uuid = [[UIDevice currentDevice] identifierForVendor].UUIDString;
-    if (!uuid) {
-        uuid = [[NSUUID UUID] UUIDString];
-    }
+    if (!uuid) uuid = [[NSUUID UUID] UUIDString];
     return uuid;
 }
 
@@ -62,44 +76,57 @@ static NSString *const kLicenseValidKey = @"com.license.isValid";
     return result;
 }
 
-- (BOOL)isLicenseValid {
-    return [[NSUserDefaults standardUserDefaults] boolForKey:kLicenseValidKey];
-}
+- (void)checkLicense {
+    if ([self isLicenseValid]) return;
 
-- (void)checkLicenseWithWindow:(UIWindow *)window {
-    if ([self isLicenseValid]) {
-        return;
-    }
     dispatch_async(dispatch_get_main_queue(), ^{
-        self.activationWindow = window;
-        [self showActivationScreen];
+        UIWindow *window = [UIApplication sharedApplication].keyWindow;
+        if (!window) {
+            if (@available(iOS 13.0, *)) {
+                UIScene *scene = [UIApplication sharedApplication].connectedScenes.anyObject;
+                if ([scene isKindOfClass:[UIWindowScene class]]) {
+                    UIWindowScene *ws = (UIWindowScene *)scene;
+                    window = ws.windows.firstObject;
+                }
+            }
+        }
+        if (window) {
+            self.activationWindow = window;
+            [self lockApp];
+        } else {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.3 * NSEC_PER_SEC),
+                dispatch_get_main_queue(), ^{
+                [self checkLicense];
+            });
+        }
     });
 }
 
-- (void)showActivationScreen {
+- (void)lockApp {
     UIViewController *rootVC = self.activationWindow.rootViewController;
     if (!rootVC) {
-        rootVC = [[UIViewController alloc] init];
-        self.activationWindow.rootViewController = rootVC;
+        UIViewController *vc = [[UIViewController alloc] init];
+        self.activationWindow.rootViewController = vc;
         [self.activationWindow makeKeyAndVisible];
+        rootVC = vc;
     }
 
-    UIAlertController *alert = [UIAlertController
-        alertControllerWithTitle:@"IMpossible"
-        message:@"الرجاء إدخال رمز التفعيل"
+    self.currentAlert = [UIAlertController
+        alertControllerWithTitle:@"🔒 IMpossible"
+        message:@"هذا التطبيق مقفل\nالرجاء إدخال رمز التفعيل"
         preferredStyle:UIAlertControllerStyleAlert];
 
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+    [self.currentAlert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.placeholder = @"XXXX-XXXX-XXXX-XXXX";
         textField.textAlignment = NSTextAlignmentCenter;
         textField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
     }];
 
     UIAlertAction *activateAction = [UIAlertAction
-        actionWithTitle:@"تأكيد"
+        actionWithTitle:@"تفعيل"
         style:UIAlertActionStyleDefault
         handler:^(UIAlertAction *action) {
-            NSString *key = [alert.textFields.firstObject.text
+            NSString *key = [self.currentAlert.textFields.firstObject.text
                 stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
             if (key.length > 0) {
                 [self sendActivationRequest:key];
@@ -108,12 +135,12 @@ static NSString *const kLicenseValidKey = @"com.license.isValid";
             }
         }];
 
-    [alert addAction:activateAction];
-    [rootVC presentViewController:alert animated:YES completion:nil];
+    [self.currentAlert addAction:activateAction];
+    [rootVC presentViewController:self.currentAlert animated:YES completion:nil];
 }
 
 - (void)sendActivationRequest:(NSString *)key {
-    NSString *urlString = [NSString stringWithFormat:@"%@/api/validate", self.serverURL];
+    NSString *urlString = [NSString stringWithFormat:@"%@/api/validate", kLicenseServerURL];
     NSURL *url = [NSURL URLWithString:urlString];
 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
@@ -127,17 +154,15 @@ static NSString *const kLicenseValidKey = @"com.license.isValid";
         @"deviceName": [self getDeviceName],
         @"deviceModel": [self getDeviceModel],
         @"iosVersion": [self getIOSVersion],
-        @"bundleId": self.bundleId ?: @"unknown"
+        @"bundleId": [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown"
     };
 
     NSError *jsonError;
     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:body options:0 error:&jsonError];
-
     if (!jsonData) {
         [self showError:@"خطأ في الاتصال"];
         return;
     }
-
     request.HTTPBody = jsonData;
 
     NSURLSessionDataTask *task = [[NSURLSession sharedSession]
@@ -149,7 +174,6 @@ static NSString *const kLicenseValidKey = @"com.license.isValid";
                 });
                 return;
             }
-
             if (!data) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self showError:@"لا يوجد رد من الخادم"];
@@ -160,7 +184,6 @@ static NSString *const kLicenseValidKey = @"com.license.isValid";
             NSError *parseError;
             NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data
                 options:0 error:&parseError];
-
             if (!json) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self showError:@"خطأ في قراءة الرد"];
@@ -176,7 +199,7 @@ static NSString *const kLicenseValidKey = @"com.license.isValid";
                 [[NSUserDefaults standardUserDefaults] setBool:YES forKey:kLicenseValidKey];
                 [[NSUserDefaults standardUserDefaults] synchronize];
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [self showSuccessAndDismiss];
+                    [self unlockApp];
                 });
             } else if (needsApproval) {
                 self.pendingKey = key;
@@ -189,7 +212,6 @@ static NSString *const kLicenseValidKey = @"com.license.isValid";
                 });
             }
         }];
-
     [task resume];
 }
 
@@ -200,22 +222,25 @@ static NSString *const kLicenseValidKey = @"com.license.isValid";
     UIViewController *rootVC = self.activationWindow.rootViewController;
     if (!rootVC) return;
 
-    UIAlertController *alert = [UIAlertController
-        alertControllerWithTitle:@"⚠️ بانتظار موافقة المطور"
-        message:@"تم إرسال طلب التفعيل للمطور.\nسيتم التحقق تلقائياً كل 10 ثوانٍ..."
+    [self.currentAlert dismissViewControllerAnimated:YES completion:nil];
+
+    self.currentAlert = [UIAlertController
+        alertControllerWithTitle:@"⏳ بانتظار موافقة المطور"
+        message:@"تم إرسال طلب التفعيل.\nسيتم التحقق تلقائياً كل 10 ثوانٍ..."
         preferredStyle:UIAlertControllerStyleAlert];
 
-    UIAlertAction *retryAction = [UIAlertAction
-        actionWithTitle:@"إعادة المحاولة الآن"
-        style:UIAlertActionStyleDefault
+    UIAlertAction *cancelAction = [UIAlertAction
+        actionWithTitle:@"إلغاء"
+        style:UIAlertActionStyleDestructive
         handler:^(UIAlertAction *action) {
-            if (self.pendingKey) {
-                [self sendActivationRequest:self.pendingKey];
-            }
+            [self.retryTimer invalidate];
+            self.retryTimer = nil;
+            self.pendingKey = nil;
+            [self lockApp];
         }];
-    [alert addAction:retryAction];
+    [self.currentAlert addAction:cancelAction];
 
-    [rootVC presentViewController:alert animated:YES completion:^{
+    [rootVC presentViewController:self.currentAlert animated:YES completion:^{
         self.retryTimer = [NSTimer scheduledTimerWithTimeInterval:10.0
             target:self selector:@selector(retryActivation)
             userInfo:nil repeats:YES];
@@ -228,27 +253,20 @@ static NSString *const kLicenseValidKey = @"com.license.isValid";
     }
 }
 
-- (void)showSuccessAndDismiss {
+- (void)unlockApp {
     [self.retryTimer invalidate];
     self.retryTimer = nil;
     self.pendingKey = nil;
 
-    if (self.activationWindow) {
-        [self.activationWindow.rootViewController dismissViewControllerAnimated:YES completion:nil];
-        self.activationWindow.hidden = YES;
-        self.activationWindow = nil;
+    UIViewController *rootVC = self.activationWindow.rootViewController;
+    [self.currentAlert dismissViewControllerAnimated:YES completion:nil];
+    self.currentAlert = nil;
+
+    if (rootVC.presentedViewController) {
+        [rootVC dismissViewControllerAnimated:YES completion:nil];
     }
 
-    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
-    if (keyWindow && keyWindow.rootViewController) {
-        UIAlertController *successAlert = [UIAlertController
-            alertControllerWithTitle:@"✅ تم التفعيل"
-            message:@"تم تفعيل التطبيق بنجاح"
-            preferredStyle:UIAlertControllerStyleAlert];
-        [successAlert addAction:[UIAlertAction actionWithTitle:@"بدء الاستخدام"
-            style:UIAlertActionStyleDefault handler:nil]];
-        [keyWindow.rootViewController presentViewController:successAlert animated:YES completion:nil];
-    }
+    self.activationWindow = nil;
 }
 
 - (void)showError:(NSString *)message {
@@ -258,18 +276,22 @@ static NSString *const kLicenseValidKey = @"com.license.isValid";
     UIViewController *rootVC = self.activationWindow.rootViewController;
     if (!rootVC) return;
 
-    UIAlertController *errorAlert = [UIAlertController
+    [self.currentAlert dismissViewControllerAnimated:YES completion:nil];
+
+    self.currentAlert = [UIAlertController
         alertControllerWithTitle:@"❌ خطأ"
         message:message
         preferredStyle:UIAlertControllerStyleAlert];
+
     UIAlertAction *retryAction = [UIAlertAction
         actionWithTitle:@"إعادة المحاولة"
         style:UIAlertActionStyleDefault
         handler:^(UIAlertAction *action) {
-            [self showActivationScreen];
+            [self lockApp];
         }];
-    [errorAlert addAction:retryAction];
-    [rootVC presentViewController:errorAlert animated:YES completion:nil];
+    [self.currentAlert addAction:retryAction];
+
+    [rootVC presentViewController:self.currentAlert animated:YES completion:nil];
 }
 
 @end
