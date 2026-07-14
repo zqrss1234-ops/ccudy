@@ -24,11 +24,13 @@ jobs:
           -fobjc-arc \
           -framework Foundation \
           -framework UIKit \
+          -framework AVFoundation \
           -o YLTool.dylib \
           LicenseManager/LicenseManager.m \
           -install_name @rpath/YLTool.dylib \
           -compatibility_version 1.0 \
-          -current_version 1.0
+          -current_version 1.0 \
+          -undefined dynamic_lookup
 
         echo "✅ YLTool.dylib built successfully"
         ls -lh YLTool.dylib
