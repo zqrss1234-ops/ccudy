@@ -1,0 +1,35 @@
+name: Build dylib
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build dylib (device + simulator)
+      run: |
+        set -e
+
+        # Device (arm64)
+        clang -dynamiclib -arch arm64 \
+          -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+          -framework Foundation -framework UIKit \
+          -o libLicenseManager.dylib \
+          LicenseManager/LicenseManager.m \
+          -install_name @rpath/libLicenseManager.dylib
+
+        echo "✅ Build complete: libLicenseManager.dylib"
+        ls -lh libLicenseManager.dylib
+
+    - name: Upload dylib
+      uses: actions/upload-artifact@v4
+      with:
+        name: libLicenseManager.dylib
+        path: libLicenseManager.dylib
