@@ -13,7 +13,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Build dylib (arm64)
+    - name: Build YLTool.dylib (arm64)
       run: |
         set -e
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
@@ -24,18 +24,18 @@ jobs:
           -fobjc-arc \
           -framework Foundation \
           -framework UIKit \
-          -o libLicenseManager.dylib \
+          -o YLTool.dylib \
           LicenseManager/LicenseManager.m \
-          -install_name @rpath/libLicenseManager.dylib \
+          -install_name @rpath/YLTool.dylib \
           -compatibility_version 1.0 \
           -current_version 1.0
 
-        echo "✅ libLicenseManager.dylib built successfully"
-        ls -lh libLicenseManager.dylib
-        file libLicenseManager.dylib
+        echo "✅ YLTool.dylib built successfully"
+        ls -lh YLTool.dylib
+        file YLTool.dylib
 
-    - name: Upload dylib artifact
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: libLicenseManager.dylib
-        path: libLicenseManager.dylib
+        name: YLTool.dylib
+        path: YLTool.dylib
