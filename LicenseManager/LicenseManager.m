@@ -112,7 +112,7 @@ static void onDylibLoad() {
     }
 
     self.currentAlert = [UIAlertController
-        alertControllerWithTitle:@"🔒 IMpossible"
+        alertControllerWithTitle:@"🔒 عبدالإله"
         message:@"هذا التطبيق مقفل\nالرجاء إدخال رمز التفعيل"
         preferredStyle:UIAlertControllerStyleAlert];
 
