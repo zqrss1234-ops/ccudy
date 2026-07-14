@@ -194,7 +194,7 @@ static CAGradientLayer *accentLine = nil;
 static BOOL running = NO;
 static BOOL isMain = YES;
 static CGFloat currentDelay = 1.0;
-static UIBackgroundTaskIdentifier bgTask = UIBackgroundTaskInvalid;
+static UIBackgroundTaskIdentifier bgTask = 0;
 
 #pragma mark - Helpers
 
