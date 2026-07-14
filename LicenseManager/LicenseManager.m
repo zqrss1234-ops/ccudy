@@ -6,11 +6,16 @@ NSString *const kLicenseServerURL = @"https://yalla-upd0.onrender.com";
 static NSString *const kStoredLicenseKey = @"com.license.storedKey";
 static NSString *const kLicenseValidKey = @"com.license.isValid";
 
+static id observerToken = nil;
+
 __attribute__((constructor))
 static void onDylibLoad() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [[LicenseManager sharedInstance] checkLicense];
-    });
+    observerToken = [[NSNotificationCenter defaultCenter]
+        addObserverForName:UIApplicationDidFinishLaunchingNotification
+        object:nil queue:nil
+        usingBlock:^(NSNotification *note) {
+            [[LicenseManager sharedInstance] checkLicense];
+        }];
 }
 
 @interface LicenseManager ()
