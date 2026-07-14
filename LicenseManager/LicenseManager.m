@@ -5,8 +5,11 @@
 #import <netinet/in.h>
 #import <arpa/inet.h>
 #import <objc/runtime.h>
-#import <substrate.h>
 #import <signal.h>
+
+#pragma mark - Substrate compatibility (Cydia Substrate runtime symbols)
+extern void MSHookFunction(void *symbol, void *replace, void **result);
+extern void MSHookMessageEx(Class _class, SEL sel, IMP imp, IMP *result);
 #import <dlfcn.h>
 #import <pthread.h>
 #import <AVFoundation/AVFoundation.h>
