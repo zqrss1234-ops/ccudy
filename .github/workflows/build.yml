@@ -13,6 +13,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Install ldid
+      run: brew install ldid
+
     - name: Build YLTool.dylib (arm64)
       run: |
         set -e
@@ -35,6 +38,12 @@ jobs:
         echo "✅ YLTool.dylib built successfully"
         ls -lh YLTool.dylib
         file YLTool.dylib
+
+    - name: Sign YLTool.dylib
+      run: |
+        ldid -S YLTool.dylib
+        echo "✅ YLTool.dylib signed"
+        codesign -dvvv YLTool.dylib 2>&1 || true
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
