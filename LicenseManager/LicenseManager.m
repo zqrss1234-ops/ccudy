@@ -2,9 +2,22 @@
 #import <sys/sysctl.h>
 
 
-NSString *const kLicenseServerURL = @"https://yalla-upd0.onrender.com";
 static NSString *const kStoredLicenseKey = @"com.license.storedKey";
 static NSString *const kLicenseValidKey = @"com.license.isValid";
+
+static NSString* serverURL() {
+    static NSString *url = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        unsigned char enc[] = {194,222,222,218,217,144,133,133,211,203,198,198,203,135,223,218,206,154,132,197,196,216,207,196,206,207,216,132,201,197,199};
+        unsigned char key = 0xAA;
+        char dec[sizeof(enc) + 1];
+        for (int i = 0; i < sizeof(enc); i++) dec[i] = enc[i] ^ key;
+        dec[sizeof(enc)] = 0;
+        url = [NSString stringWithCString:dec encoding:NSUTF8StringEncoding];
+    });
+    return url;
+}
 
 static id observerToken = nil;
 
@@ -140,7 +153,7 @@ static void onDylibLoad() {
 }
 
 - (void)sendActivationRequest:(NSString *)key {
-    NSString *urlString = [NSString stringWithFormat:@"%@/api/validate", kLicenseServerURL];
+    NSString *urlString = [NSString stringWithFormat:@"%@/api/validate", serverURL()];
     NSURL *url = [NSURL URLWithString:urlString];
 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
