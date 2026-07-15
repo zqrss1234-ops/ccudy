@@ -16,42 +16,63 @@ jobs:
     - name: Install ldid
       run: brew install ldid
 
-    - name: Build abdulilah.dylib
+    - name: Check files
+      run: |
+        echo "=== Files ==="
+        find . -name "*.m" -o -name "*.h" | sort
+        echo "=== SDK ==="
+        xcrun --sdk iphoneos --show-sdk-path
+
+    - name: Build
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        echo "SDK: $SDK"
+        echo "SDK=$SDK"
 
+        # Compile each file to check for errors
+        for f in Tweak/Tweak.m Tweak/Glitch.m Tweak/Speed.m Libraries/LicenseManager.m; do
+          echo "--- Compiling $f ---"
+          clang -x objective-c -c \
+            -arch arm64 \
+            -isysroot "$SDK" \
+            -fobjc-arc \
+            -ILibraries \
+            -o /tmp/$(basename $f).o \
+            "$f" 2>&1
+          if [ $? -ne 0 ]; then
+            echo "❌ FAILED: $f"
+            exit 1
+          fi
+          echo "✅ OK: $f"
+        done
+
+        echo "=== Linking ==="
         clang -dynamiclib \
           -arch arm64 \
-          -arch arm64e \
           -isysroot "$SDK" \
           -fobjc-arc \
-          -ILibraries \
           -framework Foundation \
           -framework UIKit \
           -framework QuartzCore \
           -framework AudioToolbox \
           -framework AVFoundation \
           -o abdulilah.dylib \
-          Tweak/Tweak.m Tweak/Glitch.m Tweak/Speed.m Libraries/LicenseManager.m \
+          /tmp/Tweak.m.o /tmp/Glitch.m.o /tmp/Speed.m.o /tmp/LicenseManager.m.o \
           -install_name @rpath/abdulilah.dylib \
           -compatibility_version 1.0 \
           -current_version 1.0 \
-          -undefined dynamic_lookup
+          -undefined dynamic_lookup 2>&1
 
-        echo "Exit code: $?"
+        echo "✅ Link done"
         ls -lh abdulilah.dylib
         file abdulilah.dylib
 
-    - name: Sign with ldid
+    - name: Sign
       run: |
         ldid -S abdulilah.dylib
         echo "✅ Signed"
-        codesign -dvvv abdulilah.dylib 2>&1 | head -3 || true
 
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
         name: abdulilah-dylib
         path: abdulilah.dylib
-        if-no-files-found: error
