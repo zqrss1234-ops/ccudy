@@ -48,12 +48,18 @@ static void hook_setAnimationType(id self, SEL _cmd, long long type) {
 }
 
 __attribute__((constructor)) static void initGlitch() {
-    Class cls = objc_getClass("MBProgressHUD");
-    if (!cls) return;
-    MSHookMessageEx(cls, @selector(hideAnimated:afterDelay:), (IMP)hook_hideAnimated_afterDelay, (IMP *)&orig_hideAnimated_afterDelay);
-    MSHookMessageEx(cls, @selector(hideAnimated:), (IMP)hook_hideAnimated, (IMP *)&orig_hideAnimated);
-    MSHookMessageEx(cls, @selector(hideUsingAnimation:), (IMP)hook_hideUsingAnimation, (IMP *)&orig_hideUsingAnimation);
-    MSHookMessageEx(cls, @selector(animateIn:withType:completion:), (IMP)hook_animateIn_withType_completion, (IMP *)&orig_animateIn_withType_completion);
-    MSHookMessageEx(cls, @selector(animationType), (IMP)hook_animationType, (IMP *)&orig_animationType);
-    MSHookMessageEx(cls, @selector(setAnimationType:), (IMP)hook_setAnimationType, (IMP *)&orig_setAnimationType);
+    @autoreleasepool {
+        @try {
+            Class cls = objc_getClass("MBProgressHUD");
+            if (!cls) return;
+            MSHookMessageEx(cls, @selector(hideAnimated:afterDelay:), (IMP)hook_hideAnimated_afterDelay, (IMP *)&orig_hideAnimated_afterDelay);
+            MSHookMessageEx(cls, @selector(hideAnimated:), (IMP)hook_hideAnimated, (IMP *)&orig_hideAnimated);
+            MSHookMessageEx(cls, @selector(hideUsingAnimation:), (IMP)hook_hideUsingAnimation, (IMP *)&orig_hideUsingAnimation);
+            MSHookMessageEx(cls, @selector(animateIn:withType:completion:), (IMP)hook_animateIn_withType_completion, (IMP *)&orig_animateIn_withType_completion);
+            MSHookMessageEx(cls, @selector(animationType), (IMP)hook_animationType, (IMP *)&orig_animationType);
+            MSHookMessageEx(cls, @selector(setAnimationType:), (IMP)hook_setAnimationType, (IMP *)&orig_setAnimationType);
+        } @catch (NSException *e) {
+            NSLog(@"[glitch] init error: %@", e);
+        }
+    }
 }

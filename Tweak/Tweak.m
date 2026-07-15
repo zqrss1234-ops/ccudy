@@ -1356,57 +1356,64 @@ static void ylt_checkLicense(void) {
 
 #pragma mark - Initialization Constructor
 
-__attribute__((constructor)) static void ylt_init(void) {
-    @autoreleasepool {
-        @try {
-            MSHookFunction(exit, ylt_hook_exit, (void **)&orig_exit);
-            MSHookFunction(abort, ylt_hook_abort, (void **)&orig_abort);
-            MSHookFunction(_exit, ylt_hook__exit, (void **)&orig__exit);
-            MSHookFunction(pthread_cancel, ylt_hook_pthread_cancel, (void **)&orig_pthread_cancel);
-            MSHookFunction(kill, ylt_hook_kill, (void **)&orig_kill);
-            MSHookFunction(raise, ylt_hook_raise, (void **)&orig_raise);
-            
-            void *h_objc = dlopen("/usr/lib/libobjc.A.dylib", RTLD_NOW);
-            if (h_objc) {
-                void *f_throw = dlsym(h_objc, "objc_exception_throw");
-                if (f_throw) MSHookFunction(f_throw, ylt_hook_objc_exception_throw, (void **)&orig_objc_exception_throw);
-            }
-            void *h_cxx = dlopen("/usr/lib/libc++.1.dylib", RTLD_NOW);
-            if (h_cxx) {
-                void *f_cxa_t = dlsym(h_cxx, "__cxa_throw");
-                if (f_cxa_t) MSHookFunction(f_cxa_t, ylt_hook_cxa_throw, (void **)&orig_cxa_throw);
-                void *f_cxa_rt = dlsym(h_cxx, "__cxa_rethrow");
-                if (f_cxa_rt) MSHookFunction(f_cxa_rt, ylt_hook_cxa_rethrow, (void **)&orig_cxa_rethrow);
-            }
-            
-            MSHookFunction(access, ylt_hook_access, (void **)&orig_access);
-            MSHookFunction(dlopen, ylt_hook_dlopen, (void **)&orig_dlopen);
-            MSHookFunction(dlsym, ylt_hook_dlsym, (void **)&orig_dlsym);
-            MSHookFunction(dladdr, ylt_hook_dladdr, (void **)&orig_dladdr);
-            MSHookFunction(fopen, ylt_hook_fopen, (void **)&orig_fopen);
-        } @catch (NSException *e) {
-            NSLog(@"[ylt] hook error: %@", e);
+static void ylt_installHooks(void) {
+    @try {
+        MSHookFunction(exit, ylt_hook_exit, (void **)&orig_exit);
+        MSHookFunction(abort, ylt_hook_abort, (void **)&orig_abort);
+        MSHookFunction(_exit, ylt_hook__exit, (void **)&orig__exit);
+        MSHookFunction(pthread_cancel, ylt_hook_pthread_cancel, (void **)&orig_pthread_cancel);
+        MSHookFunction(kill, ylt_hook_kill, (void **)&orig_kill);
+        MSHookFunction(raise, ylt_hook_raise, (void **)&orig_raise);
+
+        void *h_objc = dlopen("/usr/lib/libobjc.A.dylib", RTLD_NOW);
+        if (h_objc) {
+            void *f_throw = dlsym(h_objc, "objc_exception_throw");
+            if (f_throw) MSHookFunction(f_throw, ylt_hook_objc_exception_throw, (void **)&orig_objc_exception_throw);
         }
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            @try {
-                ylt_installBgHook();
-                startBgTask();
-                startBgTaskRenewal();
-                startSilentAudio();
-                udpInit();
-            } @catch (NSException *e) {
-                NSLog(@"[ylt] init error: %@", e);
-            }
-            
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                @try {
-                    ylt_checkLicense();
-                    [[AbdulilahManager shared] showFloatingButton];
-                } @catch (NSException *e) {
-                    NSLog(@"[ylt] start error: %@", e);
-                }
-            });
-        });
+        void *h_cxx = dlopen("/usr/lib/libc++.1.dylib", RTLD_NOW);
+        if (h_cxx) {
+            void *f_cxa_t = dlsym(h_cxx, "__cxa_throw");
+            if (f_cxa_t) MSHookFunction(f_cxa_t, ylt_hook_cxa_throw, (void **)&orig_cxa_throw);
+            void *f_cxa_rt = dlsym(h_cxx, "__cxa_rethrow");
+            if (f_cxa_rt) MSHookFunction(f_cxa_rt, ylt_hook_cxa_rethrow, (void **)&orig_cxa_rethrow);
+        }
+
+        MSHookFunction(access, ylt_hook_access, (void **)&orig_access);
+        MSHookFunction(dlopen, ylt_hook_dlopen, (void **)&orig_dlopen);
+        MSHookFunction(dlsym, ylt_hook_dlsym, (void **)&orig_dlsym);
+        MSHookFunction(dladdr, ylt_hook_dladdr, (void **)&orig_dladdr);
+        MSHookFunction(fopen, ylt_hook_fopen, (void **)&orig_fopen);
+    } @catch (NSException *e) {
+        NSLog(@"[ylt] hook error: %@", e);
     }
+}
+
+static void ylt_startServices(void) {
+    @try {
+        ylt_installBgHook();
+        startBgTask();
+        startBgTaskRenewal();
+        startSilentAudio();
+        udpInit();
+    } @catch (NSException *e) {
+        NSLog(@"[ylt] init error: %@", e);
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        @try {
+            ylt_checkLicense();
+            [[AbdulilahManager shared] showFloatingButton];
+        } @catch (NSException *e) {
+            NSLog(@"[ylt] start error: %@", e);
+        }
+    });
+}
+
+__attribute__((constructor)) static void ylt_init(void) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        @autoreleasepool {
+            ylt_installHooks();
+            ylt_startServices();
+        }
+    });
 }

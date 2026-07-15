@@ -55,7 +55,8 @@ jobs:
           -o abdulilah.dylib \
           /tmp/Tweak-ios.o /tmp/Glitch-ios.o /tmp/Speed-ios.o \
           -install_name @rpath/abdulilah.dylib \
-          -compatibility_version 1.0 -current_version 1.0 -undefined dynamic_lookup
+          -compatibility_version 1.0 -current_version 1.0 \
+          -lsubstrate -LLibraries
         echo "BUILD SUCCESS"
         ls -lh abdulilah.dylib
         file abdulilah.dylib
