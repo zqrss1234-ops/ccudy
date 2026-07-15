@@ -7,6 +7,5 @@
 
 - (void)checkLicense;
 - (BOOL)isLicenseValid;
-- (void)validateKey:(NSString *)key completion:(void (^)(BOOL valid, NSString *message))completion;
 
 @end
