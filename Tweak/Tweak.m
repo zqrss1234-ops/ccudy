@@ -45,12 +45,18 @@ static void ylt_retryActivation(void);
 @end
 
 static inline UIWindow *ylt_keyWindow(void) {
-    for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-        if (scene.activationState == UISceneActivationStateForegroundActive) {
-            return [(UIWindowScene *)scene windows].firstObject;
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                return [(UIWindowScene *)scene windows].firstObject;
+            }
         }
+        return nil;
     }
-    return nil;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    return [UIApplication sharedApplication].keyWindow;
+#pragma clang diagnostic pop
 }
 
 #define SHARED_STATE @"/tmp/com.abdulilah.state.plist"
@@ -1336,15 +1342,7 @@ static void ylt_checkLicense(void) {
     if (ylt_isLicenseValid()) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         if (ylt_isLicenseValid() || ylt_currentAlert) return;
-        UIWindow *window = [UIApplication sharedApplication].keyWindow;
-        if (!window) {
-            if (@available(iOS 13.0, *)) {
-                UIScene *scene = [UIApplication sharedApplication].connectedScenes.anyObject;
-                if ([scene isKindOfClass:[UIWindowScene class]]) {
-                    window = [(UIWindowScene *)scene windows].firstObject;
-                }
-            }
-        }
+        UIWindow *window = ylt_keyWindow();
         if (window) {
             ylt_activationWindow = window;
             ylt_lockApp();
