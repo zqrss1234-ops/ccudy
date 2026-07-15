@@ -16,31 +16,39 @@ jobs:
     - name: Install ldid
       run: brew install ldid
 
+    - name: Check architectures
+      run: |
+        echo "=== SDK ==="
+        xcrun --sdk iphoneos --show-sdk-path
+        echo "=== Architectures ==="
+        xcrun clang -arch arm64 -x c - -o /dev/null -c 2>&1 <<< "int x;" && echo "arm64: OK" || echo "arm64: FAIL"
+        xcrun clang -arch arm64e -x c - -o /dev/null -c 2>&1 <<< "int x;" && echo "arm64e: OK" || echo "arm64e: FAIL"
+
     - name: iOS compile Tweak.m
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" \
+        xcrun clang -x objective-c -c -arch arm64 -arch arm64e -isysroot "$SDK" \
           -fobjc-arc -mios-version-min=14.0 -ILibraries \
           -o /tmp/Tweak-ios.o Tweak/Tweak.m
 
     - name: iOS compile Glitch.m
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" \
+        xcrun clang -x objective-c -c -arch arm64 -arch arm64e -isysroot "$SDK" \
           -fobjc-arc -mios-version-min=14.0 -ILibraries \
           -o /tmp/Glitch-ios.o Tweak/Glitch.m
 
     - name: iOS compile Speed.m
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" \
+        xcrun clang -x objective-c -c -arch arm64 -arch arm64e -isysroot "$SDK" \
           -fobjc-arc -mios-version-min=14.0 -ILibraries \
           -o /tmp/Speed-ios.o Tweak/Speed.m
 
     - name: Link dylib
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -dynamiclib -arch arm64 -isysroot "$SDK" \
+        xcrun clang -dynamiclib -arch arm64 -arch arm64e -isysroot "$SDK" \
           -fobjc-arc -mios-version-min=14.0 \
           -framework Foundation -framework UIKit -framework QuartzCore \
           -framework AudioToolbox -framework AVFoundation \
