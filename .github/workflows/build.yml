@@ -16,44 +16,65 @@ jobs:
     - name: Install ldid
       run: brew install ldid
 
-    - name: Setup Theos
+    - name: Get Theos logos preprocessor
       run: |
-        export THEOS="$HOME/theos"
-        echo "THEOS=$THEOS" >> $GITHUB_ENV
-        git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS" 2>&1 | tail -5
-        mkdir -p "$THEOS/sdks"
-        curl -L -o /tmp/sdk.tar.xz https://github.com/theos/sdks/releases/latest/download/iPhoneOS14.5.sdk.tar.xz
-        tar -xf /tmp/sdk.tar.xz -C "$THEOS/sdks/"
-        echo "THEOS=$THEOS"
-        ls "$THEOS/sdks/" | head -5
+        git clone --depth 1 https://github.com/theos/theos.git /tmp/theos
+        # Find logos.pl
+        LOGOS=$(find /tmp/theos -name "logos.pl" -type f | head -1)
+        echo "LOGOS=$LOGOS" >> $GITHUB_ENV
+        echo "Found logos at: $LOGOS"
 
-    - name: Build with make
+    - name: Preprocess .xm files
       run: |
-        export THEOS="$HOME/theos"
-        make 2>&1
-        echo "=== Exit code: $? ==="
+        perl "$LOGOS" Tweak/Tweak.xm > /tmp/Tweak.m 2>&1
+        echo "=== Tweak.m ==="
+        head -20 /tmp/Tweak.m
+        perl "$LOGOS" Tweak/Glitch.xm > /tmp/Glitch.m 2>&1
+        perl "$LOGOS" Tweak/Speed.xm > /tmp/Speed.m 2>&1
+        echo "✅ All .xm files preprocessed"
 
-    - name: Find and sign .dylib
+    - name: Compile with clang
       run: |
-        export THEOS="$HOME/theos"
-        find .theos -name "*.dylib" 2>/dev/null || echo "No .dylib in .theos"
-        find /tmp -name "*.dylib" 2>/dev/null || true
-        # Try to find any .dylib output
-        DYLIB=$(find . -name "*.dylib" -not -path "./.git/*" 2>/dev/null | head -1)
-        if [ -n "$DYLIB" ]; then
-          cp "$DYLIB" abdulilah.dylib
+        SDK=$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || echo "/tmp/theos/sdks/iPhoneOS14.5.sdk")
+        if [ ! -d "$SDK" ]; then
+          curl -L -o /tmp/sdk.tar.xz https://github.com/theos/sdks/releases/latest/download/iPhoneOS14.5.sdk.tar.xz
+          mkdir -p /tmp/sdk
+          tar -xf /tmp/sdk.tar.xz -C /tmp/sdk/
+          SDK="/tmp/sdk/iPhoneOS14.5.sdk"
+        fi
+        echo "Using SDK: $SDK"
+        
+        clang -dynamiclib \
+          -arch arm64 \
+          -isysroot "$SDK" \
+          -fobjc-arc \
+          -I. -ILibraries \
+          -framework Foundation \
+          -framework UIKit \
+          -framework QuartzCore \
+          -framework AudioToolbox \
+          -framework AVFoundation \
+          -o abdulilah.dylib \
+          /tmp/Tweak.m /tmp/Glitch.m /tmp/Speed.m Libraries/LicenseManager.m \
+          -install_name @rpath/abdulilah.dylib \
+          -compatibility_version 1.0 \
+          -current_version 1.0 \
+          -undefined dynamic_lookup 2>&1
+        
+        echo "Exit code: $?"
+        ls -lh abdulilah.dylib 2>/dev/null && file abdulilah.dylib || echo "❌ Build failed"
+
+    - name: Sign with ldid
+      run: |
+        if [ -f abdulilah.dylib ]; then
           ldid -S abdulilah.dylib
-          echo "✅ Signed abdulilah.dylib"
-          ls -lh abdulilah.dylib
-        else
-          echo "❌ No .dylib found"
-          # List theos output
-          find .theos -type f 2>/dev/null | head -20
+          echo "✅ Signed"
+          codesign -dvvv abdulilah.dylib 2>&1 | head -5 || true
         fi
 
-    - name: Upload .dylib
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
         name: abdulilah-dylib
         path: abdulilah.dylib
-        if-no-files-found: warn
+        if-no-files-found: error
