@@ -185,7 +185,7 @@ static FILE *ylt_hook_fopen(const char *path, const char *mode) {
 
 #pragma mark - Background Task
 
-static UIBackgroundTaskIdentifier bgTask = UIBackgroundTaskInvalid;
+static UIBackgroundTaskIdentifier bgTask = 0;
 
 static void startBgTask(void) {
     if (bgTask != UIBackgroundTaskInvalid) return;
