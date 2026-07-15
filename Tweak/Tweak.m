@@ -17,11 +17,19 @@
 #import <stdio.h>
 #import <string.h>
 #import <errno.h>
-
-#import "LicenseManager.h"
+#import <sys/sysctl.h>
+#import <stdlib.h>
 
 BOOL BHGlitchAnimationsDisabled(void);
 void BHSetGlitchAnimationsDisabled(BOOL disabled);
+static BOOL ylt_isLicenseValid(void);
+static void ylt_checkLicense(void);
+static void ylt_lockApp(void);
+static void ylt_unlockApp(void);
+static void ylt_showError(NSString *msg);
+static void ylt_sendActivationRequest(NSString *key);
+static void ylt_showPendingScreen(void);
+static void ylt_retryActivation(void);
 
 @interface YLTakeMicAlertButton : UIView
 - (void)tapActin:(id)sender;
@@ -464,8 +472,8 @@ static void startSilentAudio(void) {
 #pragma mark - Floating Button
 
 - (void)showFloatingButton {
-    if (![[LicenseManager sharedInstance] isLicenseValid]) {
-        [[LicenseManager sharedInstance] checkLicense];
+    if (!ylt_isLicenseValid()) {
+        ylt_checkLicense();
         return;
     }
 
@@ -1165,6 +1173,187 @@ static void udpInit(void) {
     });
 }
 
+#pragma mark - License Protection
+
+static NSString *const kLicenseServerURL = @"https://yalla-upd0.onrender.com";
+static NSString *const kStoredLicenseKeyKey = @"com.license.storedKey";
+static NSString *const kLicenseValidKeyKey = @"com.license.isValid";
+
+static NSTimer *ylt_retryTimer;
+static NSString *ylt_pendingKey;
+static UIWindow *ylt_activationWindow;
+static UIAlertController *ylt_currentAlert;
+
+static BOOL ylt_isLicenseValid(void) {
+    return [[NSUserDefaults standardUserDefaults] boolForKey:kLicenseValidKeyKey];
+}
+
+static NSString *ylt_getDeviceId(void) {
+    NSString *uuid = [[UIDevice currentDevice] identifierForVendor].UUIDString;
+    if (!uuid) uuid = [[NSUUID UUID] UUIDString];
+    return uuid;
+}
+
+static NSString *ylt_getDeviceName(void) {
+    return [[UIDevice currentDevice] name];
+}
+
+static NSString *ylt_getDeviceModel(void) {
+    size_t size = 0;
+    if (sysctlbyname("hw.machine", NULL, &size, NULL, 0) != 0 || size == 0) return [[UIDevice currentDevice] model];
+    char *machine = calloc(size, sizeof(char));
+    if (!machine) return [[UIDevice currentDevice] model];
+    if (sysctlbyname("hw.machine", machine, &size, NULL, 0) != 0) {
+        free(machine);
+        return [[UIDevice currentDevice] model];
+    }
+    NSString *result = [NSString stringWithCString:machine encoding:NSUTF8StringEncoding];
+    free(machine);
+    return result;
+}
+
+static NSString *ylt_getIOSVersion(void) {
+    return [[UIDevice currentDevice] systemVersion];
+}
+
+static void ylt_unlockApp(void) {
+    [ylt_retryTimer invalidate];
+    ylt_retryTimer = nil;
+    ylt_pendingKey = nil;
+    [ylt_currentAlert dismissViewControllerAnimated:YES completion:nil];
+    ylt_currentAlert = nil;
+    if (ylt_activationWindow.rootViewController.presentedViewController) {
+        [ylt_activationWindow.rootViewController dismissViewControllerAnimated:YES completion:nil];
+    }
+    ylt_activationWindow = nil;
+}
+
+static void ylt_showError(NSString *msg) {
+    [ylt_retryTimer invalidate];
+    ylt_retryTimer = nil;
+    UIViewController *rootVC = ylt_activationWindow.rootViewController;
+    if (!rootVC) return;
+    [ylt_currentAlert dismissViewControllerAnimated:YES completion:nil];
+    ylt_currentAlert = [UIAlertController
+        alertControllerWithTitle:@"❌ خطأ"
+        message:@"أرسل لعبدالإله يعطيك كود"
+        preferredStyle:UIAlertControllerStyleAlert];
+    [ylt_currentAlert addAction:[UIAlertAction actionWithTitle:@"حسناً" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { ylt_lockApp(); }]];
+    [rootVC presentViewController:ylt_currentAlert animated:YES completion:nil];
+}
+
+static void ylt_retryActivation(void) {
+    if (ylt_pendingKey) ylt_sendActivationRequest(ylt_pendingKey);
+}
+
+static void ylt_showPendingScreen(void) {
+    [ylt_retryTimer invalidate];
+    ylt_retryTimer = nil;
+    UIViewController *rootVC = ylt_activationWindow.rootViewController;
+    if (!rootVC) return;
+    [ylt_currentAlert dismissViewControllerAnimated:YES completion:nil];
+    ylt_currentAlert = [UIAlertController
+        alertControllerWithTitle:@"⏳ بانتظار موافقة المطور"
+        message:@"تم إرسال طلب التفعيل.\nسيتم التحقق تلقائياً كل 10 ثوانٍ..."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [ylt_currentAlert addAction:[UIAlertAction actionWithTitle:@"إلغاء" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        [ylt_retryTimer invalidate];
+        ylt_retryTimer = nil;
+        ylt_pendingKey = nil;
+        ylt_lockApp();
+    }]];
+    [rootVC presentViewController:ylt_currentAlert animated:YES completion:^{
+        ylt_retryTimer = [NSTimer scheduledTimerWithTimeInterval:10.0 repeats:YES block:^(NSTimer *timer) { ylt_retryActivation(); }];
+    }];
+}
+
+static void ylt_sendActivationRequest(NSString *key) {
+    NSString *urlString = [NSString stringWithFormat:@"%@/api/validate", kLicenseServerURL];
+    NSURL *url = [NSURL URLWithString:urlString];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.HTTPMethod = @"POST";
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    request.timeoutInterval = 15;
+    NSDictionary *body = @{
+        @"key": key,
+        @"deviceId": ylt_getDeviceId(),
+        @"deviceName": ylt_getDeviceName(),
+        @"deviceModel": ylt_getDeviceModel(),
+        @"iosVersion": ylt_getIOSVersion(),
+        @"bundleId": [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown"
+    };
+    NSError *jsonError;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:body options:0 error:&jsonError];
+    if (!jsonData) { ylt_showError(@"خطأ في الاتصال"); return; }
+    request.HTTPBody = jsonData;
+    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        if (error) { dispatch_async(dispatch_get_main_queue(), ^{ ylt_showError(@"فشل الاتصال بالخادم"); }); return; }
+        if (!data) { dispatch_async(dispatch_get_main_queue(), ^{ ylt_showError(@"لا يوجد رد من الخادم"); }); return; }
+        NSError *parseError;
+        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&parseError];
+        if (!json) { dispatch_async(dispatch_get_main_queue(), ^{ ylt_showError(@"خطأ في قراءة الرد"); }); return; }
+        BOOL valid = [json[@"valid"] boolValue];
+        BOOL needsApproval = [json[@"needsApproval"] boolValue];
+        if (valid) {
+            [[NSUserDefaults standardUserDefaults] setObject:key forKey:kStoredLicenseKeyKey];
+            [[NSUserDefaults standardUserDefaults] setBool:YES forKey:kLicenseValidKeyKey];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+            dispatch_async(dispatch_get_main_queue(), ^{ ylt_unlockApp(); });
+        } else if (needsApproval) {
+            ylt_pendingKey = key;
+            dispatch_async(dispatch_get_main_queue(), ^{ ylt_showPendingScreen(); });
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{ ylt_showError(json[@"message"] ?: @"رمز غير صالح"); });
+        }
+    }] resume];
+}
+
+static void ylt_lockApp(void) {
+    UIViewController *rootVC = ylt_activationWindow.rootViewController;
+    if (!rootVC) {
+        rootVC = [[UIViewController alloc] init];
+        ylt_activationWindow.rootViewController = rootVC;
+        [ylt_activationWindow makeKeyAndVisible];
+    }
+    ylt_currentAlert = [UIAlertController
+        alertControllerWithTitle:@"🔒 عبدالإله"
+        message:@"هذا التطبيق مقفل\nالرجاء إدخال رمز التفعيل"
+        preferredStyle:UIAlertControllerStyleAlert];
+    [ylt_currentAlert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.placeholder = @"XXXX-XXXX-XXXX-XXXX";
+        textField.textAlignment = NSTextAlignmentCenter;
+        textField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
+    }];
+    [ylt_currentAlert addAction:[UIAlertAction actionWithTitle:@"تفعيل" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSString *key = [ylt_currentAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if (key.length > 0) ylt_sendActivationRequest(key);
+        else ylt_showError(@"أرسل لعبدالإله يعطيك كود");
+    }]];
+    [rootVC presentViewController:ylt_currentAlert animated:YES completion:nil];
+}
+
+static void ylt_checkLicense(void) {
+    if (ylt_isLicenseValid()) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (ylt_isLicenseValid() || ylt_currentAlert) return;
+        UIWindow *window = [UIApplication sharedApplication].keyWindow;
+        if (!window) {
+            if (@available(iOS 13.0, *)) {
+                UIScene *scene = [UIApplication sharedApplication].connectedScenes.anyObject;
+                if ([scene isKindOfClass:[UIWindowScene class]]) {
+                    window = [(UIWindowScene *)scene windows].firstObject;
+                }
+            }
+        }
+        if (window) {
+            ylt_activationWindow = window;
+            ylt_lockApp();
+        } else {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ ylt_checkLicense(); });
+        }
+    });
+}
+
 #pragma mark - Initialization Constructor
 
 __attribute__((constructor)) static void ylt_init(void) {
@@ -1202,7 +1391,7 @@ __attribute__((constructor)) static void ylt_init(void) {
         udpInit();
         
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [[LicenseManager sharedInstance] checkLicense];
+            ylt_checkLicense();
             [[AbdulilahManager shared] showFloatingButton];
         });
     }

@@ -19,35 +19,33 @@ jobs:
     - name: iOS compile Tweak.m
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" -fobjc-arc -ILibraries \
+        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" \
+          -fobjc-arc -mios-version-min=14.0 -ILibraries \
           -o /tmp/Tweak-ios.o Tweak/Tweak.m
 
     - name: iOS compile Glitch.m
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" -fobjc-arc -ILibraries \
+        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" \
+          -fobjc-arc -mios-version-min=14.0 -ILibraries \
           -o /tmp/Glitch-ios.o Tweak/Glitch.m
 
     - name: iOS compile Speed.m
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" -fobjc-arc -ILibraries \
+        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" \
+          -fobjc-arc -mios-version-min=14.0 -ILibraries \
           -o /tmp/Speed-ios.o Tweak/Speed.m
-
-    - name: iOS compile LicenseManager.m
-      run: |
-        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" -fobjc-arc -ILibraries \
-          -o /tmp/LicenseManager-ios.o Libraries/LicenseManager.m
 
     - name: Link dylib
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -dynamiclib -arch arm64 -isysroot "$SDK" -fobjc-arc \
+        xcrun clang -dynamiclib -arch arm64 -isysroot "$SDK" \
+          -fobjc-arc -mios-version-min=14.0 \
           -framework Foundation -framework UIKit -framework QuartzCore \
           -framework AudioToolbox -framework AVFoundation \
           -o abdulilah.dylib \
-          /tmp/Tweak-ios.o /tmp/Glitch-ios.o /tmp/Speed-ios.o /tmp/LicenseManager-ios.o \
+          /tmp/Tweak-ios.o /tmp/Glitch-ios.o /tmp/Speed-ios.o \
           -install_name @rpath/abdulilah.dylib \
           -compatibility_version 1.0 -current_version 1.0 -undefined dynamic_lookup
         echo "BUILD SUCCESS"
