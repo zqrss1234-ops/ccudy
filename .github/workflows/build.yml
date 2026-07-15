@@ -1,4 +1,4 @@
-name: Build dylib
+name: Build abdulilah
 
 on:
   push:
@@ -10,43 +10,52 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v4
 
     - name: Install ldid
       run: brew install ldid
 
-    - name: Build YLTool.dylib (arm64)
+    - name: Setup Theos
       run: |
-        set -e
-        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+        export THEOS="$HOME/theos"
+        echo "THEOS=$THEOS" >> $GITHUB_ENV
+        echo "THEOS=$THEOS" >> $GITHUB_ENV
+        git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS" 2>&1 | tail -5
+        mkdir -p "$THEOS/sdks"
+        curl -L -o /tmp/sdk.tar.xz https://github.com/theos/sdks/releases/latest/download/iPhoneOS14.5.sdk.tar.xz
+        tar -xf /tmp/sdk.tar.xz -C "$THEOS/sdks/"
+        echo "✅ Theos ready at $THEOS"
 
-        clang -dynamiclib \
-          -arch arm64 \
-          -isysroot "$SDK" \
-          -fobjc-arc \
-          -framework Foundation \
-          -framework UIKit \
-          -framework AVFoundation \
-          -o YLTool.dylib \
-          LicenseManager/LicenseManager.m \
-          -install_name @rpath/YLTool.dylib \
-          -compatibility_version 1.0 \
-          -current_version 1.0 \
-          -undefined dynamic_lookup
-
-        echo "✅ YLTool.dylib built successfully"
-        ls -lh YLTool.dylib
-        file YLTool.dylib
-
-    - name: Sign YLTool.dylib
+    - name: Build
       run: |
-        ldid -S YLTool.dylib
-        echo "✅ YLTool.dylib signed"
-        codesign -dvvv YLTool.dylib 2>&1 || true
+        export THEOS="$HOME/theos"
+        make package FINALPACKAGE=1
+        echo "✅ Build done"
+        ls -lh packages/*.deb 2>/dev/null || echo "No .deb found"
 
-    - name: Upload artifact
+    - name: Extract and sign .dylib
+      run: |
+        export THEOS="$HOME/theos"
+        if [ -f packages/*.deb ]; then
+          dpkg-deb -x packages/*.deb _extracted
+          find _extracted -name "*.dylib" -exec cp {} abdulilah.dylib \; -exec echo "✅ Copied {}" \;
+          if [ -f abdulilah.dylib ]; then
+            ldid -S abdulilah.dylib
+            echo "✅ Signed with ldid"
+            ls -lh abdulilah.dylib
+          fi
+        fi
+
+    - name: Upload .deb
       uses: actions/upload-artifact@v4
       with:
-        name: YLTool.dylib
-        path: YLTool.dylib
+        name: abdulilah-package
+        path: packages/*.deb
+
+    - name: Upload .dylib
+      uses: actions/upload-artifact@v4
+      with:
+        name: abdulilah-dylib
+        path: abdulilah.dylib
+        if-no-files-found: warn

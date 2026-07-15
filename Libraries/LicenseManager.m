@@ -1,51 +1,15 @@
 #import "LicenseManager.h"
 #import <sys/sysctl.h>
+#import <stdlib.h>
 
-#define X(k) ((k)^0xAA)
 
-static unsigned char _e_srv[] = {194,222,222,218,217,144,133,133,211,203,198,198,203,135,223,218,206,154,132,197,196,216,207,196,206,207,216,132,201,197,199};
-static unsigned char _e_val[] = {133,203,218,195,133,220,203,198,195,206,203,222,207};
-static unsigned char _e_key[] = {193,207,211};
-static unsigned char _e_did[] = {206,207,220,195,201,207,227,206};
-static unsigned char _e_dnm[] = {206,207,220,195,201,207,228,203,199,207};
-static unsigned char _e_dmo[] = {206,207,220,195,201,207,231,197,206,207,198};
-static unsigned char _e_iov[] = {195,197,217,252,207,216,217,195,197,196};
-static unsigned char _e_bid[] = {200,223,196,206,198,207,227,206};
-static unsigned char _e_unk[] = {223,196,193,196,197,221,196};
-static unsigned char _e_vld[] = {220,203,198,195,206};
-static unsigned char _e_nap[] = {196,207,207,206,217,235,218,218,216,197,220,203,198};
-static unsigned char _e_msg[] = {199,207,217,217,203,205,207};
-static unsigned char _e_stk[] = {201,197,199,132,198,195,201,207,196,217,207,132,217,222,197,216,207,206,225,207,211};
-static unsigned char _e_vlk[] = {201,197,199,132,198,195,201,207,196,217,207,132,195,217,252,203,198,195,206};
+#ifndef LICENSE_SERVER_URL
+#define LICENSE_SERVER_URL "https://yalla-upd0.onrender.com"
+#endif
 
-static NSString* _d(unsigned char *e, size_t l) {
-    static NSMutableDictionary *c;
-    static dispatch_once_t o;
-    dispatch_once(&o, ^{ c = [NSMutableDictionary dictionary]; });
-    @synchronized(c) {
-        NSNumber *k = @((intptr_t)e);
-        NSString *r = c[k];
-        if (r) return r;
-        char buf[l+1];
-        for (size_t i = 0; i < l; i++) buf[i] = X(e[i]);
-        buf[l] = 0;
-        r = [NSString stringWithCString:buf encoding:NSUTF8StringEncoding];
-        c[k] = r;
-        return r;
-    }
-}
-
-static id observerToken = nil;
-
-__attribute__((constructor))
-static void onDylibLoad() {
-    observerToken = [[NSNotificationCenter defaultCenter]
-        addObserverForName:UIApplicationDidFinishLaunchingNotification
-        object:nil queue:nil
-        usingBlock:^(NSNotification *note) {
-            [[LicenseManager sharedInstance] checkLicense];
-        }];
-}
+NSString *const kLicenseServerURL = @LICENSE_SERVER_URL;
+static NSString *const kStoredLicenseKey = @"com.license.storedKey";
+static NSString *const kLicenseValidKey = @"com.license.isValid";
 
 @interface LicenseManager ()
 @property (nonatomic, strong) NSTimer *retryTimer;
@@ -73,7 +37,7 @@ static void onDylibLoad() {
 }
 
 - (BOOL)isLicenseValid {
-    return [[NSUserDefaults standardUserDefaults] boolForKey:_d(_e_vlk, sizeof(_e_vlk))];
+    return [[NSUserDefaults standardUserDefaults] boolForKey:kLicenseValidKey];
 }
 
 - (NSString *)getDeviceId {
@@ -96,10 +60,16 @@ static void onDylibLoad() {
 }
 
 - (NSString *)getSysInfoByName:(const char *)typeSpecifier {
-    size_t size;
-    sysctlbyname(typeSpecifier, NULL, &size, NULL, 0);
-    char *machine = malloc(size);
-    sysctlbyname(typeSpecifier, machine, &size, NULL, 0);
+    size_t size = 0;
+    if (sysctlbyname(typeSpecifier, NULL, &size, NULL, 0) != 0 || size == 0) return nil;
+
+    char *machine = calloc(size, sizeof(char));
+    if (!machine) return nil;
+    if (sysctlbyname(typeSpecifier, machine, &size, NULL, 0) != 0) {
+        free(machine);
+        return nil;
+    }
+
     NSString *result = [NSString stringWithCString:machine encoding:NSUTF8StringEncoding];
     free(machine);
     return result;
@@ -109,6 +79,8 @@ static void onDylibLoad() {
     if ([self isLicenseValid]) return;
 
     dispatch_async(dispatch_get_main_queue(), ^{
+        if ([self isLicenseValid] || self.currentAlert) return;
+
         UIWindow *window = [UIApplication sharedApplication].keyWindow;
         if (!window) {
             if (@available(iOS 13.0, *)) {
@@ -159,9 +131,9 @@ static void onDylibLoad() {
                 stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
             if (key.length > 0) {
                 [self sendActivationRequest:key];
-            } else {
-                [self showContactError];
-            }
+    } else {
+        [self showError:@"أرسل لعبدالإله يعطيك كود"];
+    }
         }];
 
     [self.currentAlert addAction:activateAction];
@@ -169,58 +141,79 @@ static void onDylibLoad() {
 }
 
 - (void)sendActivationRequest:(NSString *)key {
-    NSString *urlStr = [NSString stringWithFormat:@"%@%@", _d(_e_srv, sizeof(_e_srv)), _d(_e_val, sizeof(_e_val))];
-    NSURL *url = [NSURL URLWithString:urlStr];
+    NSString *urlString = [NSString stringWithFormat:@"%@/api/validate", kLicenseServerURL];
+    NSURL *url = [NSURL URLWithString:urlString];
 
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
-    req.HTTPMethod = @"POST";
-    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    req.timeoutInterval = 15;
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.HTTPMethod = @"POST";
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    request.timeoutInterval = 15;
 
     NSDictionary *body = @{
-        _d(_e_key, sizeof(_e_key)): key,
-        _d(_e_did, sizeof(_e_did)): [self getDeviceId],
-        _d(_e_dnm, sizeof(_e_dnm)): [self getDeviceName],
-        _d(_e_dmo, sizeof(_e_dmo)): [self getDeviceModel],
-        _d(_e_iov, sizeof(_e_iov)): [self getIOSVersion],
-        _d(_e_bid, sizeof(_e_bid)): [[NSBundle mainBundle] bundleIdentifier] ?: _d(_e_unk, sizeof(_e_unk))
+        @"key": key,
+        @"deviceId": [self getDeviceId],
+        @"deviceName": [self getDeviceName],
+        @"deviceModel": [self getDeviceModel],
+        @"iosVersion": [self getIOSVersion],
+        @"bundleId": [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown"
     };
 
-    NSError *je;
-    NSData *jd = [NSJSONSerialization dataWithJSONObject:body options:0 error:&je];
-    if (!jd) {
-        [self showContactError];
+    NSError *jsonError;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:body options:0 error:&jsonError];
+    if (!jsonData) {
+        [self showError:@"خطأ في الاتصال"];
         return;
     }
-    req.HTTPBody = jd;
+    request.HTTPBody = jsonData;
 
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
-        if (err || !data) {
-            dispatch_async(dispatch_get_main_queue(), ^{ [self showContactError]; });
-            return;
-        }
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession]
+        dataTaskWithRequest:request
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            if (error) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self showError:@"فشل الاتصال بالخادم"];
+                });
+                return;
+            }
+            if (!data) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self showError:@"لا يوجد رد من الخادم"];
+                });
+                return;
+            }
 
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-        if (!json) {
-            dispatch_async(dispatch_get_main_queue(), ^{ [self showContactError]; });
-            return;
-        }
+            NSError *parseError;
+            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data
+                options:0 error:&parseError];
+            if (!json) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self showError:@"خطأ في قراءة الرد"];
+                });
+                return;
+            }
 
-        BOOL valid = [json[_d(_e_vld, sizeof(_e_vld))] boolValue];
-        BOOL needsApproval = [json[_d(_e_nap, sizeof(_e_nap))] boolValue];
+            BOOL valid = [json[@"valid"] boolValue];
+            BOOL needsApproval = [json[@"needsApproval"] boolValue];
 
-        if (valid) {
-            [[NSUserDefaults standardUserDefaults] setBool:YES forKey:_d(_e_vlk, sizeof(_e_vlk))];
-            [[NSUserDefaults standardUserDefaults] setObject:key forKey:_d(_e_stk, sizeof(_e_stk))];
-            [[NSUserDefaults standardUserDefaults] synchronize];
-            dispatch_async(dispatch_get_main_queue(), ^{ [self unlockApp]; });
-        } else if (needsApproval) {
-            self.pendingKey = key;
-            dispatch_async(dispatch_get_main_queue(), ^{ [self showPendingScreen]; });
-        } else {
-            dispatch_async(dispatch_get_main_queue(), ^{ [self showContactError]; });
-        }
-    }] resume];
+            if (valid) {
+                [[NSUserDefaults standardUserDefaults] setObject:key forKey:kStoredLicenseKey];
+                [[NSUserDefaults standardUserDefaults] setBool:YES forKey:kLicenseValidKey];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self unlockApp];
+                });
+            } else if (needsApproval) {
+                self.pendingKey = key;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self showPendingScreen];
+                });
+            } else {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self showError:json[@"message"] ?: @"رمز غير صالح"];
+                });
+            }
+        }];
+    [task resume];
 }
 
 - (void)showPendingScreen {
@@ -233,8 +226,8 @@ static void onDylibLoad() {
     [self.currentAlert dismissViewControllerAnimated:YES completion:nil];
 
     self.currentAlert = [UIAlertController
-        alertControllerWithTitle:@"⏳ بانتظار الموافقة"
-        message:@"تم الإرسال\nسيتم التحقق كل 10 ثوانٍ"
+        alertControllerWithTitle:@"⏳ بانتظار موافقة المطور"
+        message:@"تم إرسال طلب التفعيل.\nسيتم التحقق تلقائياً كل 10 ثوانٍ..."
         preferredStyle:UIAlertControllerStyleAlert];
 
     UIAlertAction *cancelAction = [UIAlertAction
@@ -256,7 +249,9 @@ static void onDylibLoad() {
 }
 
 - (void)retryActivation {
-    if (self.pendingKey) [self sendActivationRequest:self.pendingKey];
+    if (self.pendingKey) {
+        [self sendActivationRequest:self.pendingKey];
+    }
 }
 
 - (void)unlockApp {
@@ -275,7 +270,7 @@ static void onDylibLoad() {
     self.activationWindow = nil;
 }
 
-- (void)showContactError {
+- (void)showError:(NSString *)message {
     [self.retryTimer invalidate];
     self.retryTimer = nil;
 
@@ -289,13 +284,13 @@ static void onDylibLoad() {
         message:@"أرسل لعبدالإله يعطيك كود"
         preferredStyle:UIAlertControllerStyleAlert];
 
-    UIAlertAction *okAction = [UIAlertAction
+    UIAlertAction *retryAction = [UIAlertAction
         actionWithTitle:@"حسناً"
         style:UIAlertActionStyleDefault
         handler:^(UIAlertAction *action) {
             [self lockApp];
         }];
-    [self.currentAlert addAction:okAction];
+    [self.currentAlert addAction:retryAction];
 
     [rootVC presentViewController:self.currentAlert animated:YES completion:nil];
 }
