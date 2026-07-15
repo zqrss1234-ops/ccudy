@@ -16,37 +16,47 @@ jobs:
     - name: Install ldid
       run: brew install ldid
 
-    - name: Check files
+    - name: Build abdulilah.dylib
+      id: build
       run: |
-        echo "=== Files ==="
-        find . -name "*.m" -o -name "*.h" | sort
-        echo "=== SDK ==="
-        xcrun --sdk iphoneos --show-sdk-path
-
-    - name: Build
-      run: |
-        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+        set +e
+        SDK=$(xcrun --sdk iphoneos --show-sdk-path 2>&1)
+        if [ $? -ne 0 ]; then
+          echo "❌ xcrun failed: $SDK"
+          echo "logs<<EOF" >> $GITHUB_ENV
+          echo "xcrun error: $SDK" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          exit 1
+        fi
         echo "SDK=$SDK"
 
-        # Compile each file to check for errors
+        # Compile each file
+        OBJS=""
         for f in Tweak/Tweak.m Tweak/Glitch.m Tweak/Speed.m Libraries/LicenseManager.m; do
           echo "--- Compiling $f ---"
-          clang -x objective-c -c \
+          LOG=$(clang -x objective-c -c \
             -arch arm64 \
             -isysroot "$SDK" \
             -fobjc-arc \
             -ILibraries \
             -o /tmp/$(basename $f).o \
-            "$f" 2>&1
-          if [ $? -ne 0 ]; then
-            echo "❌ FAILED: $f"
-            exit 1
+            "$f" 2>&1)
+          RC=$?
+          echo "$LOG"
+          if [ $RC -ne 0 ]; then
+            echo "❌ FAILED: $f (exit $RC)"
+            echo "logs<<EOF" >> $GITHUB_ENV
+            echo "Compile error for $f:" >> $GITHUB_ENV
+            echo "$LOG" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+            exit $RC
           fi
-          echo "✅ OK: $f"
+          echo "✅ $f compiled OK"
+          OBJS="$OBJS /tmp/$(basename $f).o"
         done
 
         echo "=== Linking ==="
-        clang -dynamiclib \
+        LOG=$(clang -dynamiclib \
           -arch arm64 \
           -isysroot "$SDK" \
           -fobjc-arc \
@@ -56,22 +66,39 @@ jobs:
           -framework AudioToolbox \
           -framework AVFoundation \
           -o abdulilah.dylib \
-          /tmp/Tweak.m.o /tmp/Glitch.m.o /tmp/Speed.m.o /tmp/LicenseManager.m.o \
+          $OBJS \
           -install_name @rpath/abdulilah.dylib \
           -compatibility_version 1.0 \
           -current_version 1.0 \
-          -undefined dynamic_lookup 2>&1
-
-        echo "✅ Link done"
+          -undefined dynamic_lookup 2>&1)
+        RC=$?
+        echo "$LOG"
+        if [ $RC -ne 0 ]; then
+          echo "❌ Link failed (exit $RC)"
+          echo "logs<<EOF" >> $GITHUB_ENV
+          echo "Link error:" >> $GITHUB_ENV
+          echo "$LOG" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          exit $RC
+        fi
+        echo "✅ Link OK"
         ls -lh abdulilah.dylib
         file abdulilah.dylib
 
+    - name: Show build logs on failure
+      if: failure()
+      run: |
+        echo "=== Build logs ==="
+        echo "${{ env.logs }}"
+
     - name: Sign
+      if: success()
       run: |
         ldid -S abdulilah.dylib
         echo "✅ Signed"
 
     - name: Upload
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: abdulilah-dylib
