@@ -16,61 +16,38 @@ jobs:
     - name: Install ldid
       run: brew install ldid
 
-    - name: Get Theos logos preprocessor
+    - name: Build abdulilah.dylib
       run: |
-        git clone --depth 1 https://github.com/theos/theos.git /tmp/theos
-        # Find logos.pl
-        LOGOS=$(find /tmp/theos -name "logos.pl" -type f | head -1)
-        echo "LOGOS=$LOGOS" >> $GITHUB_ENV
-        echo "Found logos at: $LOGOS"
+        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+        echo "SDK: $SDK"
 
-    - name: Preprocess .xm files
-      run: |
-        perl "$LOGOS" Tweak/Tweak.xm > /tmp/Tweak.m 2>&1
-        echo "=== Tweak.m ==="
-        head -20 /tmp/Tweak.m
-        perl "$LOGOS" Tweak/Glitch.xm > /tmp/Glitch.m 2>&1
-        perl "$LOGOS" Tweak/Speed.xm > /tmp/Speed.m 2>&1
-        echo "✅ All .xm files preprocessed"
-
-    - name: Compile with clang
-      run: |
-        SDK=$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || echo "/tmp/theos/sdks/iPhoneOS14.5.sdk")
-        if [ ! -d "$SDK" ]; then
-          curl -L -o /tmp/sdk.tar.xz https://github.com/theos/sdks/releases/latest/download/iPhoneOS14.5.sdk.tar.xz
-          mkdir -p /tmp/sdk
-          tar -xf /tmp/sdk.tar.xz -C /tmp/sdk/
-          SDK="/tmp/sdk/iPhoneOS14.5.sdk"
-        fi
-        echo "Using SDK: $SDK"
-        
         clang -dynamiclib \
           -arch arm64 \
+          -arch arm64e \
           -isysroot "$SDK" \
           -fobjc-arc \
-          -I. -ILibraries \
+          -ILibraries \
           -framework Foundation \
           -framework UIKit \
           -framework QuartzCore \
           -framework AudioToolbox \
           -framework AVFoundation \
           -o abdulilah.dylib \
-          /tmp/Tweak.m /tmp/Glitch.m /tmp/Speed.m Libraries/LicenseManager.m \
+          Tweak/Tweak.m Tweak/Glitch.m Tweak/Speed.m Libraries/LicenseManager.m \
           -install_name @rpath/abdulilah.dylib \
           -compatibility_version 1.0 \
           -current_version 1.0 \
-          -undefined dynamic_lookup 2>&1
-        
+          -undefined dynamic_lookup
+
         echo "Exit code: $?"
-        ls -lh abdulilah.dylib 2>/dev/null && file abdulilah.dylib || echo "❌ Build failed"
+        ls -lh abdulilah.dylib
+        file abdulilah.dylib
 
     - name: Sign with ldid
       run: |
-        if [ -f abdulilah.dylib ]; then
-          ldid -S abdulilah.dylib
-          echo "✅ Signed"
-          codesign -dvvv abdulilah.dylib 2>&1 | head -5 || true
-        fi
+        ldid -S abdulilah.dylib
+        echo "✅ Signed"
+        codesign -dvvv abdulilah.dylib 2>&1 | head -3 || true
 
     - name: Upload
       uses: actions/upload-artifact@v4

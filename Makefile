@@ -8,7 +8,7 @@ INSTALL_TARGET_PROCESSES = YallaLite YallaLite11 YallaLite22 YallaLite33 YallaLi
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = abdulilah
-abdulilah_FILES = Tweak/Tweak.xm Tweak/Speed.xm Tweak/Glitch.xm Libraries/LicenseManager.m
+abdulilah_FILES = Tweak/Tweak.m Tweak/Speed.m Tweak/Glitch.m Libraries/LicenseManager.m
 abdulilah_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/Libraries -DLICENSE_SERVER_URL=\"$(LICENSE_SERVER_URL)\"
 abdulilah_FRAMEWORKS = UIKit QuartzCore AudioToolbox AVFoundation Foundation
 
