@@ -1068,9 +1068,14 @@ static void startSilentAudio(void) {
     if ([targetView isKindOfClass:[UIButton class]]) {
         UIButton *btn = (UIButton *)targetView;
         [btn sendActionsForControlEvents:UIControlEventTouchUpInside];
-    } else if ([targetView isKindOfClass:[YLTakeMicAlertButton class]]) {
-        YLTakeMicAlertButton *ylb = (YLTakeMicAlertButton *)targetView;
-        [ylb tapActin:nil];
+    } else if ([targetView isKindOfClass:objc_getClass("YLTakeMicAlertButton")]) {
+        SEL sel = NSSelectorFromString(@"tapActin:");
+        if ([targetView respondsToSelector:sel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            [targetView performSelector:sel withObject:nil];
+#pragma clang diagnostic pop
+        }
     } else {
         for (UIGestureRecognizer *g in targetView.gestureRecognizers) {
             if ([g isKindOfClass:[UITapGestureRecognizer class]]) {
