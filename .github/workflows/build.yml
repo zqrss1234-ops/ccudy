@@ -20,38 +20,36 @@ jobs:
       run: |
         export THEOS="$HOME/theos"
         echo "THEOS=$THEOS" >> $GITHUB_ENV
-        echo "THEOS=$THEOS" >> $GITHUB_ENV
         git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS" 2>&1 | tail -5
         mkdir -p "$THEOS/sdks"
         curl -L -o /tmp/sdk.tar.xz https://github.com/theos/sdks/releases/latest/download/iPhoneOS14.5.sdk.tar.xz
         tar -xf /tmp/sdk.tar.xz -C "$THEOS/sdks/"
-        echo "✅ Theos ready at $THEOS"
+        echo "THEOS=$THEOS"
+        ls "$THEOS/sdks/" | head -5
 
-    - name: Build
+    - name: Build with make
       run: |
         export THEOS="$HOME/theos"
-        make package FINALPACKAGE=1
-        echo "✅ Build done"
-        ls -lh packages/*.deb 2>/dev/null || echo "No .deb found"
+        make 2>&1
+        echo "=== Exit code: $? ==="
 
-    - name: Extract and sign .dylib
+    - name: Find and sign .dylib
       run: |
         export THEOS="$HOME/theos"
-        if [ -f packages/*.deb ]; then
-          dpkg-deb -x packages/*.deb _extracted
-          find _extracted -name "*.dylib" -exec cp {} abdulilah.dylib \; -exec echo "✅ Copied {}" \;
-          if [ -f abdulilah.dylib ]; then
-            ldid -S abdulilah.dylib
-            echo "✅ Signed with ldid"
-            ls -lh abdulilah.dylib
-          fi
+        find .theos -name "*.dylib" 2>/dev/null || echo "No .dylib in .theos"
+        find /tmp -name "*.dylib" 2>/dev/null || true
+        # Try to find any .dylib output
+        DYLIB=$(find . -name "*.dylib" -not -path "./.git/*" 2>/dev/null | head -1)
+        if [ -n "$DYLIB" ]; then
+          cp "$DYLIB" abdulilah.dylib
+          ldid -S abdulilah.dylib
+          echo "✅ Signed abdulilah.dylib"
+          ls -lh abdulilah.dylib
+        else
+          echo "❌ No .dylib found"
+          # List theos output
+          find .theos -type f 2>/dev/null | head -20
         fi
-
-    - name: Upload .deb
-      uses: actions/upload-artifact@v4
-      with:
-        name: abdulilah-package
-        path: packages/*.deb
 
     - name: Upload .dylib
       uses: actions/upload-artifact@v4
