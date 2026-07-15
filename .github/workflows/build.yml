@@ -16,43 +16,29 @@ jobs:
     - name: Install ldid
       run: brew install ldid
 
-    - name: Host compile Tweak.m
-      run: xcrun clang -x objective-c -c -fobjc-arc -ILibraries -o /tmp/Tweak.o Tweak/Tweak.m
-
-    - name: Host compile Glitch.m
-      run: xcrun clang -x objective-c -c -fobjc-arc -ILibraries -o /tmp/Glitch.o Tweak/Glitch.m
-
-    - name: Host compile Speed.m
-      run: xcrun clang -x objective-c -c -fobjc-arc -ILibraries -o /tmp/Speed.o Tweak/Speed.m
-
-    - name: Host compile LicenseManager.m
-      run: xcrun clang -x objective-c -c -fobjc-arc -ILibraries -o /tmp/LicenseManager.o Libraries/LicenseManager.m
-
-    - name: SDK check
-      run: |
-        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        echo "SDK=$SDK"
-        echo "SDK version: $(xcrun --sdk iphoneos --show-sdk-version)"
-
     - name: iOS compile Tweak.m
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" -fobjc-arc -ILibraries -o /tmp/Tweak-ios.o Tweak/Tweak.m
+        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" -fobjc-arc -ILibraries \
+          -o /tmp/Tweak-ios.o Tweak/Tweak.m
 
     - name: iOS compile Glitch.m
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" -fobjc-arc -ILibraries -o /tmp/Glitch-ios.o Tweak/Glitch.m
+        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" -fobjc-arc -ILibraries \
+          -o /tmp/Glitch-ios.o Tweak/Glitch.m
 
     - name: iOS compile Speed.m
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" -fobjc-arc -ILibraries -o /tmp/Speed-ios.o Tweak/Speed.m
+        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" -fobjc-arc -ILibraries \
+          -o /tmp/Speed-ios.o Tweak/Speed.m
 
     - name: iOS compile LicenseManager.m
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" -fobjc-arc -ILibraries -o /tmp/LicenseManager-ios.o Libraries/LicenseManager.m
+        xcrun clang -x objective-c -c -arch arm64 -isysroot "$SDK" -fobjc-arc -ILibraries \
+          -o /tmp/LicenseManager-ios.o Libraries/LicenseManager.m
 
     - name: Link dylib
       run: |
