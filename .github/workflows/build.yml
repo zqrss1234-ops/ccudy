@@ -32,10 +32,10 @@ jobs:
 
     - name: Extract and sign
       run: |
-        DYLIB=$(find . -name "abdulilah.dylib" -o -name "*.dylib" | grep -i abdulilah | head -1)
-        if [ -z "$DYLIB" ]; then
+        DYLIB="./.theos/obj/abdulilah.dylib"
+        if [ ! -f "$DYLIB" ]; then
           echo "NO DYLIB FOUND"
-          find . -type f -name "*.dylib"
+          find . -type f -name "*.dylib" ! -path "*.dSYM*" | head -10
           exit 1
         fi
         echo "Found: $DYLIB"
