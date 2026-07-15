@@ -1,25 +1,39 @@
 #import "LicenseManager.h"
 #import <sys/sysctl.h>
 
+#define X(k) ((k)^0xAA)
 
-#define XOR_KEY 0xAA
+static unsigned char _e_srv[] = {194,222,222,218,217,144,133,133,211,203,198,198,203,135,223,218,206,154,132,197,196,216,207,196,206,207,216,132,201,197,199};
+static unsigned char _e_val[] = {133,203,218,195,133,220,203,198,195,206,203,222,207};
+static unsigned char _e_key[] = {197,207,211};
+static unsigned char _e_did[] = {206,207,220,195,201,207,227,206};
+static unsigned char _e_dnm[] = {206,207,220,195,201,207,228,203,199,207};
+static unsigned char _e_dmo[] = {206,207,220,195,201,207,231,197,206,207,198};
+static unsigned char _e_iov[] = {195,197,217,252,207,216,217,195,197,196};
+static unsigned char _e_bid[] = {200,223,196,206,198,207,227,206};
+static unsigned char _e_unk[] = {223,196,195,197,220,207,196};
+static unsigned char _e_vld[] = {220,203,198,195,206};
+static unsigned char _e_nap[] = {196,207,207,206,217,235,218,218,216,197,220,203,198};
+static unsigned char _e_msg[] = {199,207,217,217,203,205,207};
+static unsigned char _e_stk[] = {201,197,199,132,198,195,201,207,196,217,207,132,217,222,197,216,207,206,225,207,211};
+static unsigned char _e_vlk[] = {201,197,199,132,198,195,201,207,196,217,207,132,195,217,252,203,198,195,206};
 
-#define EX(name, data, len) static unsigned char _e_##name[] = data; static NSString* _s_##name() { static NSString *s; static dispatch_once_t o; dispatch_once(&o, ^{ char d[len+1]; for(int i=0;i<len;i++) d[i]=_e_##name[i]^XOR_KEY; d[len]=0; s=[NSString stringWithCString:d encoding:NSUTF8StringEncoding]; }); return s; }
-
-EX(SRV, {194,222,222,218,217,144,133,133,211,203,198,198,203,135,223,218,206,154,132,197,196,216,207,196,206,207,216,132,201,197,199}, 31)
-EX(VAL, {133,203,218,195,133,220,203,198,195,206,203,222,207}, 13)
-EX(STK, {201,197,199,132,198,195,201,207,196,217,207,132,217,222,197,216,207,206,225,207,211}, 21)
-EX(VLK, {201,197,199,132,198,195,201,207,196,217,207,132,195,217,252,203,198,195,206}, 19)
-EX(KEY, {197,207,211}, 3)
-EX(DID, {206,207,220,195,201,207,227,206}, 8)
-EX(DNM, {206,207,220,195,201,207,228,203,199,207}, 10)
-EX(DMO, {206,207,220,195,201,207,231,197,206,207,198}, 11)
-EX(IOV, {195,197,217,252,207,216,217,195,197,196}, 10)
-EX(BID, {200,223,196,206,198,207,227,206}, 8)
-EX(VLD, {220,203,198,195,206}, 5)
-EX(NAP, {196,207,207,206,217,235,218,218,216,197,220,203,198}, 13)
-EX(MSG, {199,207,217,217,203,205,207}, 7)
-EX(UNK, {223,196,195,197,220,207,196}, 7)
+static NSString* _d(unsigned char *e, size_t l) {
+    static NSMutableDictionary *c;
+    static dispatch_once_t o;
+    dispatch_once(&o, ^{ c = [NSMutableDictionary dictionary]; });
+    @synchronized(c) {
+        NSNumber *k = @((intptr_t)e);
+        NSString *r = c[k];
+        if (r) return r;
+        char buf[l+1];
+        for (size_t i = 0; i < l; i++) buf[i] = X(e[i]);
+        buf[l] = 0;
+        r = [NSString stringWithCString:buf encoding:NSUTF8StringEncoding];
+        c[k] = r;
+        return r;
+    }
+}
 
 static id observerToken = nil;
 
@@ -59,7 +73,7 @@ static void onDylibLoad() {
 }
 
 - (BOOL)isLicenseValid {
-    return [[NSUserDefaults standardUserDefaults] boolForKey:_s_VLK()];
+    return [[NSUserDefaults standardUserDefaults] boolForKey:_d(_e_vlk, sizeof(_e_vlk))];
 }
 
 - (NSString *)getDeviceId {
@@ -155,7 +169,7 @@ static void onDylibLoad() {
 }
 
 - (void)sendActivationRequest:(NSString *)key {
-    NSString *urlString = [NSString stringWithFormat:@"%@%@", _s_SRV(), _s_VAL()];
+    NSString *urlString = [NSString stringWithFormat:@"%@%@", _d(_e_srv, sizeof(_e_srv)), _d(_e_val, sizeof(_e_val))];
     NSURL *url = [NSURL URLWithString:urlString];
 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
@@ -164,12 +178,12 @@ static void onDylibLoad() {
     request.timeoutInterval = 15;
 
     NSDictionary *body = @{
-        _s_KEY(): key,
-        _s_DID(): [self getDeviceId],
-        _s_DNM(): [self getDeviceName],
-        _s_DMO(): [self getDeviceModel],
-        _s_IOV(): [self getIOSVersion],
-        _s_BID(): [[NSBundle mainBundle] bundleIdentifier] ?: _s_UNK()
+        _d(_e_key, sizeof(_e_key)): key,
+        _d(_e_did, sizeof(_e_did)): [self getDeviceId],
+        _d(_e_dnm, sizeof(_e_dnm)): [self getDeviceName],
+        _d(_e_dmo, sizeof(_e_dmo)): [self getDeviceModel],
+        _d(_e_iov, sizeof(_e_iov)): [self getIOSVersion],
+        _d(_e_bid, sizeof(_e_bid)): [[NSBundle mainBundle] bundleIdentifier] ?: _d(_e_unk, sizeof(_e_unk))
     };
 
     NSError *jsonError;
@@ -206,12 +220,12 @@ static void onDylibLoad() {
                 return;
             }
 
-            BOOL valid = [json[_s_VLD()] boolValue];
-            BOOL needsApproval = [json[_s_NAP()] boolValue];
+            BOOL valid = [json[_d(_e_vld, sizeof(_e_vld))] boolValue];
+            BOOL needsApproval = [json[_d(_e_nap, sizeof(_e_nap))] boolValue];
 
             if (valid) {
-                [[NSUserDefaults standardUserDefaults] setObject:key forKey:_s_STK()];
-                [[NSUserDefaults standardUserDefaults] setBool:YES forKey:_s_VLK()];
+                [[NSUserDefaults standardUserDefaults] setObject:key forKey:_d(_e_stk, sizeof(_e_stk))];
+                [[NSUserDefaults standardUserDefaults] setBool:YES forKey:_d(_e_vlk, sizeof(_e_vlk))];
                 [[NSUserDefaults standardUserDefaults] synchronize];
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self unlockApp];
@@ -223,7 +237,7 @@ static void onDylibLoad() {
                 });
             } else {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [self showError:json[_s_MSG()] ?: @"رمز غير صالح"];
+                    [self showError:json[_d(_e_msg, sizeof(_e_msg))] ?: @"رمز غير صالح"];
                 });
             }
         }];
