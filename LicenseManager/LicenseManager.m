@@ -5,13 +5,13 @@
 
 static unsigned char _e_srv[] = {194,222,222,218,217,144,133,133,211,203,198,198,203,135,223,218,206,154,132,197,196,216,207,196,206,207,216,132,201,197,199};
 static unsigned char _e_val[] = {133,203,218,195,133,220,203,198,195,206,203,222,207};
-static unsigned char _e_key[] = {197,207,211};
+static unsigned char _e_key[] = {193,207,211};
 static unsigned char _e_did[] = {206,207,220,195,201,207,227,206};
 static unsigned char _e_dnm[] = {206,207,220,195,201,207,228,203,199,207};
 static unsigned char _e_dmo[] = {206,207,220,195,201,207,231,197,206,207,198};
 static unsigned char _e_iov[] = {195,197,217,252,207,216,217,195,197,196};
 static unsigned char _e_bid[] = {200,223,196,206,198,207,227,206};
-static unsigned char _e_unk[] = {223,196,195,197,220,207,196};
+static unsigned char _e_unk[] = {223,196,193,196,197,221,196};
 static unsigned char _e_vld[] = {220,203,198,195,206};
 static unsigned char _e_nap[] = {196,207,207,206,217,235,218,218,216,197,220,203,198};
 static unsigned char _e_msg[] = {199,207,217,217,203,205,207};
