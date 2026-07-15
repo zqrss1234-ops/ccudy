@@ -16,37 +16,64 @@ jobs:
     - name: Install ldid
       run: brew install ldid
 
-    - name: Check env
+    - name: Syntax check (host compile)
       run: |
-        echo "=== xcrun clang version ==="
-        xcrun clang --version
-        echo "=== SDK search ==="
-        xcrun --sdk iphoneos --show-sdk-path 2>&1 || echo "FAILED: no iphoneos SDK"
-        ls /Applications/Xcode*.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/ 2>&1 || echo "No iPhoneOS SDKs found"
-        echo "=== Xcode paths ==="
-        xcode-select -p
-        ls "$(xcode-select -p)/Platforms/iPhoneOS.platform/Developer/SDKs/" 2>&1 || echo "No SDKs in selected path"
+        set -e
+        echo "=== Host compile Tweak.m ==="
+        xcrun clang -x objective-c -c \
+          -fobjc-arc \
+          -ILibraries \
+          -o /tmp/Tweak.o Tweak/Tweak.m 2>&1
+        echo "=== Host compile Glitch.m ==="
+        xcrun clang -x objective-c -c \
+          -fobjc-arc \
+          -ILibraries \
+          -o /tmp/Glitch.o Tweak/Glitch.m 2>&1
+        echo "=== Host compile Speed.m ==="
+        xcrun clang -x objective-c -c \
+          -fobjc-arc \
+          -ILibraries \
+          -o /tmp/Speed.o Tweak/Speed.m 2>&1
+        echo "=== Host compile LicenseManager.m ==="
+        xcrun clang -x objective-c -c \
+          -fobjc-arc \
+          -ILibraries \
+          -o /tmp/LicenseManager.o Libraries/LicenseManager.m 2>&1
+        echo "=== ALL HOST COMPILES OK ==="
 
-    - name: Build
+    - name: SDK check
+      run: |
+        set -e
+        echo "=== SDK path ==="
+        xcrun --sdk iphoneos --show-sdk-path || echo "NO_SDK"
+        echo "=== SDK list ==="
+        xcrun --sdk iphoneos --show-sdk-version || echo "NO_VERSION"
+        echo "=== All SDKs ==="
+        xcodebuild -showsdks 2>&1 | head -20
+        echo "=== Simulator SDK ==="
+        xcrun --sdk iphonesimulator --show-sdk-path || echo "NO_SIM_SDK"
+
+    - name: Cross-compile for iOS
       run: |
         set -e
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
         echo "SDK=$SDK"
-
-        OBJ=""
         for f in Tweak/Tweak.m Tweak/Glitch.m Tweak/Speed.m Libraries/LicenseManager.m; do
-          echo "=== Compile $f ==="
+          echo "=== iOS compile $f ==="
           xcrun clang -x objective-c -c \
             -arch arm64 \
             -isysroot "$SDK" \
             -fobjc-arc \
             -ILibraries \
-            -o /tmp/$(basename $f).o \
+            -o /tmp/$(basename $f .m)-ios.o \
             "$f"
-          OBJ="$OBJ /tmp/$(basename $f).o"
         done
+        echo "=== ALL iOS COMPILES OK ==="
 
-        echo "=== Link ==="
+    - name: Link
+      run: |
+        set -e
+        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
         xcrun clang -dynamiclib \
           -arch arm64 \
           -isysroot "$SDK" \
@@ -57,16 +84,14 @@ jobs:
           -framework AudioToolbox \
           -framework AVFoundation \
           -o abdulilah.dylib \
-          $OBJ \
+          /tmp/Tweak-ios.o /tmp/Glitch-ios.o /tmp/Speed-ios.o /tmp/LicenseManager-ios.o \
           -install_name @rpath/abdulilah.dylib \
           -compatibility_version 1.0 \
           -current_version 1.0 \
-          -undefined dynamic_lookup
-
-        echo "=== Done ==="
+          -undefined dynamic_lookup 2>&1
+        echo "=== LINK OK ==="
         ls -lh abdulilah.dylib
         file abdulilah.dylib
-      shell: bash
 
     - name: Sign
       run: |
