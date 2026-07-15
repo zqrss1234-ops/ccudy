@@ -18,17 +18,19 @@ jobs:
 
     - name: Check env
       run: |
-        echo "=== Xcode version ==="
-        xcodebuild -version 2>&1
-        echo "=== SDKs ==="
-        xcrun --sdk iphoneos --show-sdk-path 2>&1 || echo "NO IPHONEOS SDK"
-        echo "=== xcrun clang ==="
-        xcrun clang --version 2>&1
+        echo "=== xcrun clang version ==="
+        xcrun clang --version
+        echo "=== SDK search ==="
+        xcrun --sdk iphoneos --show-sdk-path 2>&1 || echo "FAILED: no iphoneos SDK"
+        ls /Applications/Xcode*.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/ 2>&1 || echo "No iPhoneOS SDKs found"
+        echo "=== Xcode paths ==="
+        xcode-select -p
+        ls "$(xcode-select -p)/Platforms/iPhoneOS.platform/Developer/SDKs/" 2>&1 || echo "No SDKs in selected path"
 
     - name: Build
       run: |
         set -e
-        SDK=$(xcrun --sdk iphoneos --show-sdk-path 2>&1)
+        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
         echo "SDK=$SDK"
 
         OBJ=""
@@ -40,7 +42,7 @@ jobs:
             -fobjc-arc \
             -ILibraries \
             -o /tmp/$(basename $f).o \
-            "$f" 2>&1
+            "$f"
           OBJ="$OBJ /tmp/$(basename $f).o"
         done
 
@@ -59,16 +61,17 @@ jobs:
           -install_name @rpath/abdulilah.dylib \
           -compatibility_version 1.0 \
           -current_version 1.0 \
-          -undefined dynamic_lookup 2>&1
+          -undefined dynamic_lookup
 
         echo "=== Done ==="
         ls -lh abdulilah.dylib
         file abdulilah.dylib
+      shell: bash
 
     - name: Sign
       run: |
         ldid -S abdulilah.dylib
-        echo "✅ Signed"
+        echo "Signed"
 
     - name: Upload
       uses: actions/upload-artifact@v4
