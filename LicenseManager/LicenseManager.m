@@ -72,10 +72,6 @@ static void onDylibLoad() {
     return self;
 }
 
-- (BOOL)isLicenseValid {
-    return [[NSUserDefaults standardUserDefaults] boolForKey:_d(_e_vlk, sizeof(_e_vlk))];
-}
-
 - (NSString *)getDeviceId {
     NSString *uuid = [[UIDevice currentDevice] identifierForVendor].UUIDString;
     if (!uuid) uuid = [[NSUUID UUID] UUIDString];
@@ -106,7 +102,7 @@ static void onDylibLoad() {
 }
 
 - (void)checkLicense {
-    if ([self isLicenseValid]) return;
+    if ([self isAlreadyActivated]) return;
 
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = [UIApplication sharedApplication].keyWindow;
@@ -129,6 +125,45 @@ static void onDylibLoad() {
             });
         }
     });
+}
+
+- (BOOL)isAlreadyActivated {
+    NSString *stored = [[NSUserDefaults standardUserDefaults] stringForKey:_d(_e_stk, sizeof(_e_stk))];
+    if (!stored) return NO;
+
+    NSString *urlStr = [NSString stringWithFormat:@"%@%@", _d(_e_srv, sizeof(_e_srv)), _d(_e_val, sizeof(_e_val))];
+    NSURL *url = [NSURL URLWithString:urlStr];
+    if (!url) return NO;
+
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+    req.HTTPMethod = @"POST";
+    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    req.timeoutInterval = 10;
+
+    NSDictionary *body = @{
+        _d(_e_key, sizeof(_e_key)): stored,
+        _d(_e_did, sizeof(_e_did)): [self getDeviceId]
+    };
+    NSError *je;
+    NSData *jd = [NSJSONSerialization dataWithJSONObject:body options:0 error:&je];
+    if (!jd) return NO;
+    req.HTTPBody = jd;
+
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    __block BOOL isValid = NO;
+
+    [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+        if (data && !err) {
+            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            if (json) {
+                isValid = [json[_d(_e_vld, sizeof(_e_vld))] boolValue];
+            }
+        }
+        dispatch_semaphore_signal(sem);
+    }] resume];
+
+    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 12 * NSEC_PER_SEC));
+    return isValid;
 }
 
 - (void)lockApp {
@@ -169,13 +204,13 @@ static void onDylibLoad() {
 }
 
 - (void)sendActivationRequest:(NSString *)key {
-    NSString *urlString = [NSString stringWithFormat:@"%@%@", _d(_e_srv, sizeof(_e_srv)), _d(_e_val, sizeof(_e_val))];
-    NSURL *url = [NSURL URLWithString:urlString];
+    NSString *urlStr = [NSString stringWithFormat:@"%@%@", _d(_e_srv, sizeof(_e_srv)), _d(_e_val, sizeof(_e_val))];
+    NSURL *url = [NSURL URLWithString:urlStr];
 
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    request.HTTPMethod = @"POST";
-    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    request.timeoutInterval = 15;
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+    req.HTTPMethod = @"POST";
+    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    req.timeoutInterval = 15;
 
     NSDictionary *body = @{
         _d(_e_key, sizeof(_e_key)): key,
@@ -186,62 +221,40 @@ static void onDylibLoad() {
         _d(_e_bid, sizeof(_e_bid)): [[NSBundle mainBundle] bundleIdentifier] ?: _d(_e_unk, sizeof(_e_unk))
     };
 
-    NSError *jsonError;
-    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:body options:0 error:&jsonError];
-    if (!jsonData) {
+    NSError *je;
+    NSData *jd = [NSJSONSerialization dataWithJSONObject:body options:0 error:&je];
+    if (!jd) {
         [self showContactError];
         return;
     }
-    request.HTTPBody = jsonData;
+    req.HTTPBody = jd;
 
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession]
-        dataTaskWithRequest:request
-        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-            if (error) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self showContactError];
-                });
-                return;
-            }
-            if (!data) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self showContactError];
-                });
-                return;
-            }
+    [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+        if (err || !data) {
+            dispatch_async(dispatch_get_main_queue(), ^{ [self showContactError]; });
+            return;
+        }
 
-            NSError *parseError;
-            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data
-                options:0 error:&parseError];
-            if (!json) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self showContactError];
-                });
-                return;
-            }
+        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if (!json) {
+            dispatch_async(dispatch_get_main_queue(), ^{ [self showContactError]; });
+            return;
+        }
 
-            BOOL valid = [json[_d(_e_vld, sizeof(_e_vld))] boolValue];
-            BOOL needsApproval = [json[_d(_e_nap, sizeof(_e_nap))] boolValue];
+        BOOL valid = [json[_d(_e_vld, sizeof(_e_vld))] boolValue];
+        BOOL needsApproval = [json[_d(_e_nap, sizeof(_e_nap))] boolValue];
 
-            if (valid) {
-                [[NSUserDefaults standardUserDefaults] setObject:key forKey:_d(_e_stk, sizeof(_e_stk))];
-                [[NSUserDefaults standardUserDefaults] setBool:YES forKey:_d(_e_vlk, sizeof(_e_vlk))];
-                [[NSUserDefaults standardUserDefaults] synchronize];
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self unlockApp];
-                });
-            } else if (needsApproval) {
-                self.pendingKey = key;
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self showPendingScreen];
-                });
-            } else {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self showContactError];
-                });
-            }
-        }];
-    [task resume];
+        if (valid) {
+            [[NSUserDefaults standardUserDefaults] setBool:YES forKey:_d(_e_vlk, sizeof(_e_vlk))];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+            dispatch_async(dispatch_get_main_queue(), ^{ [self unlockApp]; });
+        } else if (needsApproval) {
+            self.pendingKey = key;
+            dispatch_async(dispatch_get_main_queue(), ^{ [self showPendingScreen]; });
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{ [self showContactError]; });
+        }
+    }] resume];
 }
 
 - (void)showPendingScreen {
@@ -277,9 +290,7 @@ static void onDylibLoad() {
 }
 
 - (void)retryActivation {
-    if (self.pendingKey) {
-        [self sendActivationRequest:self.pendingKey];
-    }
+    if (self.pendingKey) [self sendActivationRequest:self.pendingKey];
 }
 
 - (void)unlockApp {
