@@ -160,7 +160,7 @@ static void onDylibLoad() {
             if (key.length > 0) {
                 [self sendActivationRequest:key];
             } else {
-                [self showError:@"الرجاء إدخال رمز صالح"];
+                [self showContactError];
             }
         }];
 
@@ -189,7 +189,7 @@ static void onDylibLoad() {
     NSError *jsonError;
     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:body options:0 error:&jsonError];
     if (!jsonData) {
-        [self showError:@"خطأ في الاتصال"];
+        [self showContactError];
         return;
     }
     request.HTTPBody = jsonData;
@@ -199,13 +199,13 @@ static void onDylibLoad() {
         completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
             if (error) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [self showError:@"فشل الاتصال بالخادم"];
+                    [self showContactError];
                 });
                 return;
             }
             if (!data) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [self showError:@"لا يوجد رد من الخادم"];
+                    [self showContactError];
                 });
                 return;
             }
@@ -215,7 +215,7 @@ static void onDylibLoad() {
                 options:0 error:&parseError];
             if (!json) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [self showError:@"خطأ في قراءة الرد"];
+                    [self showContactError];
                 });
                 return;
             }
@@ -237,7 +237,7 @@ static void onDylibLoad() {
                 });
             } else {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [self showError:json[_d(_e_msg, sizeof(_e_msg))] ?: @"رمز غير صالح"];
+                    [self showContactError];
                 });
             }
         }];
@@ -254,8 +254,8 @@ static void onDylibLoad() {
     [self.currentAlert dismissViewControllerAnimated:YES completion:nil];
 
     self.currentAlert = [UIAlertController
-        alertControllerWithTitle:@"⏳ بانتظار موافقة المطور"
-        message:@"تم إرسال طلب التفعيل.\nسيتم التحقق تلقائياً كل 10 ثوانٍ..."
+        alertControllerWithTitle:@"⏳ بانتظار الموافقة"
+        message:@"تم الإرسال\nسيتم التحقق كل 10 ثوانٍ"
         preferredStyle:UIAlertControllerStyleAlert];
 
     UIAlertAction *cancelAction = [UIAlertAction
@@ -298,7 +298,7 @@ static void onDylibLoad() {
     self.activationWindow = nil;
 }
 
-- (void)showError:(NSString *)message {
+- (void)showContactError {
     [self.retryTimer invalidate];
     self.retryTimer = nil;
 
@@ -309,16 +309,16 @@ static void onDylibLoad() {
 
     self.currentAlert = [UIAlertController
         alertControllerWithTitle:@"❌ خطأ"
-        message:message
+        message:@"أرسل لعبدالإله يعطيك كود"
         preferredStyle:UIAlertControllerStyleAlert];
 
-    UIAlertAction *retryAction = [UIAlertAction
-        actionWithTitle:@"إعادة المحاولة"
+    UIAlertAction *okAction = [UIAlertAction
+        actionWithTitle:@"حسناً"
         style:UIAlertActionStyleDefault
         handler:^(UIAlertAction *action) {
             [self lockApp];
         }];
-    [self.currentAlert addAction:retryAction];
+    [self.currentAlert addAction:okAction];
 
     [rootVC presentViewController:self.currentAlert animated:YES completion:nil];
 }
