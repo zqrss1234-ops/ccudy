@@ -16,56 +16,32 @@ jobs:
     - name: Install ldid
       run: brew install ldid
 
-    - name: Check architectures
+    - name: Install Theos
       run: |
-        echo "=== SDK ==="
-        xcrun --sdk iphoneos --show-sdk-path
-        echo "=== Architectures ==="
-        xcrun clang -arch arm64 -x c - -o /dev/null -c 2>&1 <<< "int x;" && echo "arm64: OK" || echo "arm64: FAIL"
-        xcrun clang -arch arm64e -x c - -o /dev/null -c 2>&1 <<< "int x;" && echo "arm64e: OK" || echo "arm64e: FAIL"
+        git clone --recursive --depth 1 https://github.com/theos/theos.git $HOME/theos
+        echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-    - name: iOS compile Tweak.m
+    - name: Build with Theos
       run: |
-        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -arch arm64e -isysroot "$SDK" \
-          -fobjc-arc -mios-version-min=14.0 -ILibraries \
-          -o /tmp/Tweak-ios.o Tweak/Tweak.m
+        export THEOS=$HOME/theos
+        make clean
+        make package FINALPACKAGE=1
+        echo "=== DYLIB ==="
+        find . -name "*.dylib" | head -5
+        find . -name "*.deb" | head -5
 
-    - name: iOS compile Glitch.m
+    - name: Extract and sign
       run: |
-        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -arch arm64e -isysroot "$SDK" \
-          -fobjc-arc -mios-version-min=14.0 -ILibraries \
-          -o /tmp/Glitch-ios.o Tweak/Glitch.m
-
-    - name: iOS compile Speed.m
-      run: |
-        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -x objective-c -c -arch arm64 -arch arm64e -isysroot "$SDK" \
-          -fobjc-arc -mios-version-min=14.0 -ILibraries \
-          -o /tmp/Speed-ios.o Tweak/Speed.m
-
-    - name: Link dylib
-      run: |
-        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-        xcrun clang -dynamiclib -arch arm64 -arch arm64e -isysroot "$SDK" \
-          -fobjc-arc -mios-version-min=14.0 \
-          -framework Foundation -framework UIKit -framework QuartzCore \
-          -framework AudioToolbox -framework AVFoundation \
-          -o abdulilah.dylib \
-          /tmp/Tweak-ios.o /tmp/Glitch-ios.o /tmp/Speed-ios.o \
-          -install_name @rpath/abdulilah.dylib \
-          -compatibility_version 1.0 -current_version 1.0 \
-          -undefined dynamic_lookup
-        echo "BUILD SUCCESS"
-        ls -lh abdulilah.dylib
+        DYLIB=$(find . -name "abdulilah.dylib" -o -name "*.dylib" | grep -i abdulilah | head -1)
+        if [ -z "$DYLIB" ]; then
+          echo "NO DYLIB FOUND"
+          find . -type f -name "*.dylib"
+          exit 1
+        fi
+        echo "Found: $DYLIB"
+        cp "$DYLIB" abdulilah.dylib
         file abdulilah.dylib
-
-    - name: Sign
-      if: success()
-      run: |
-        ldid -S abdulilah.dylib
-        echo "Signed"
+        ls -lh abdulilah.dylib
 
     - name: Upload dylib
       if: success()
